@@ -356,7 +356,43 @@ body.slideshow.idle, body.slideshow.idle .stage { cursor: none; }
 .ext:hover { text-decoration: underline; }
 .ext:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .card-links { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 8px; }
-.this-card .ghost { margin-top: 12px; }
+.this-card .actions { margin-top: 12px; }
+
+/* ---------- Favorites ---------- */
+.fav-mark {
+  position: fixed; z-index: 5;
+  top: calc(20px + env(safe-area-inset-top, 0px)); left: calc(18px + env(safe-area-inset-left, 0px));
+  width: 20px; height: 20px;
+  color: var(--accent); opacity: .85;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,.7));
+  pointer-events: none; transition: opacity .2s;
+}
+body.slideshow.idle .fav-mark { opacity: 0; }
+.heart-pop { position: fixed; inset: 0; z-index: 6; display: grid; place-items: center; pointer-events: none; }
+.heart-pop svg { width: 112px; height: 112px; color: var(--accent); opacity: 0; filter: drop-shadow(0 6px 24px rgba(0,0,0,.6)); }
+.heart-pop.go svg { animation: heart .8s var(--ease-out) forwards; }
+@keyframes heart {
+  0% { opacity: 0; transform: scale(.5); }
+  25% { opacity: .95; transform: scale(1.12); }
+  45% { transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.04); }
+}
+.fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
+.fav-grid button {
+  padding: 0; border: 0; border-radius: 5px; overflow: hidden;
+  aspect-ratio: 63 / 88; background: #15131a; cursor: pointer;
+}
+.fav-grid button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fav-grid img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.deck-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; font-size: 14px; margin: 0 0 10px; }
+#favEmpty { margin-top: 0; }
+#favMoreBtn { margin-top: 10px; }
+#favActions { margin-top: 12px; }
+.import-thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 100%; }
+.qr-card .import-thumbs img { aspect-ratio: 63 / 88; object-fit: cover; border-radius: 4px; background: #ddd5c8; image-rendering: auto; }
+.qr-card p { margin: 0; color: #4a4450; font-size: 14.5px; }
+.qr-card .primary { width: 100%; }
+.qr-card button:disabled { opacity: .45; cursor: default; }
 
 /* View picker with small preview pictograms */
 .views { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -476,6 +512,8 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
 </button>
 
+<svg class="fav-mark" id="favMark" hidden viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="Favorite"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+<div class="heart-pop" id="heartPop" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></div>
 <div class="coach" id="coach" hidden>← Swipe for the next card</div>
 <div class="progress" id="progress" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -500,7 +538,23 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
         <button type="button" class="ext" id="ciMore">More art by this artist →</button>
         <a class="ext" id="ciLink" href="#" target="_blank" rel="noopener">View on Scryfall ↗</a>
       </div>
-      <button type="button" class="ghost" id="shareCardBtn">Share this card</button>
+      <div class="actions">
+        <button type="button" class="ghost" id="favToggle" aria-pressed="false">♡ Add to favorites</button>
+        <button type="button" class="ghost" id="shareCardBtn">Share this card</button>
+      </div>
+    </div>
+
+    <div>
+      <p class="label">Favorites <span id="favCount"></span></p>
+      <p class="deck-line" id="deckLine" hidden><span id="deckText"></span><button type="button" class="ext" id="deckBack">Back to all cards</button></p>
+      <p class="hint" id="favEmpty">Double-tap a card to keep it here. No account needed.</p>
+      <div class="fav-grid" id="favGrid"></div>
+      <button type="button" class="ext" id="favMoreBtn" hidden>Show all</button>
+      <div class="actions" id="favActions" hidden>
+        <button type="button" class="ghost" id="favShuffleBtn">Shuffle favorites</button>
+        <button type="button" class="ghost" id="favShareBtn">Share favorites</button>
+      </div>
+      <p class="hint" id="favNote" hidden>Favorites are saved in this browser. Share them as a link to move them to another device or to keep a backup.</p>
     </div>
 
     <div>
@@ -657,7 +711,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     </div>
 
     <div class="fine">
-      <p class="keys">On a computer: <kbd>→</kbd> or <kbd>Space</kbd> next, <kbd>←</kbd> back, <kbd>F</kbd> flip, <kbd>V</kbd> change view, <kbd>S</kbd> slideshow, <kbd>M</kbd> menu.</p>
+      <p class="keys">On a computer: <kbd>→</kbd> or <kbd>Space</kbd> next, <kbd>←</kbd> back, <kbd>F</kbd> flip, <kbd>V</kbd> change view, <kbd>L</kbd> favorite, <kbd>S</kbd> slideshow, <kbd>M</kbd> menu.</p>
       <p>Card data and images from <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>. Ponder stores your settings in this browser only. No accounts, no cookies, no tracking.</p>
       <p>Ponder is unofficial fan content, permitted under the Wizards of the Coast Fan Content Policy. It is not approved or endorsed by Wizards. Card images, artwork and text are property of Wizards of the Coast. © Wizards of the Coast LLC.</p>
     </div>
@@ -670,6 +724,17 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     <img id="qrImg" alt="QR code that opens Ponder">
     <p class="qr-url" id="qrUrl"></p>
     <button type="button" class="ghost" id="qrClose">Close</button>
+  </div>
+</div>
+
+<div class="qr" id="importBox" hidden role="dialog" aria-modal="true" aria-labelledby="importTitle">
+  <div class="qr-card">
+    <h2 id="importTitle">Shared favorites</h2>
+    <p id="importText"></p>
+    <div class="import-thumbs" id="importThumbs"></div>
+    <button type="button" class="primary" id="importAdd">Add to my favorites</button>
+    <button type="button" class="ghost" id="importShow">Show me these cards</button>
+    <button type="button" class="ghost" id="importSkip">Not now</button>
   </div>
 </div>
 
@@ -702,6 +767,8 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   let filling = false;
   let lastRequest = 0;
   let pausedUntil = 0;
+  let deck = null;    // null: random cards from Scryfall; otherwise { kind: "favs" | "shared", cards, bag }
+  let seen = 0;       // cards shown in this visit
   let waitingForNext = false;
   let animating = false;
 
@@ -766,7 +833,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   }
 
   // Every API call goes through here, so Ponder never exceeds Scryfall's rate limits
-  async function scryfall(url) {
+  async function scryfall(url, body) {
     let wait = Math.max(lastRequest + MIN_GAP_MS, pausedUntil) - Date.now();
     while (wait > 0) {
       await sleep(wait);
@@ -775,7 +842,9 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     lastRequest = Date.now();
     let res;
     try {
-      res = await fetch(url, { headers: { Accept: "application/json" } });
+      res = await fetch(url, body
+        ? { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) }
+        : { headers: { Accept: "application/json" } });
     } catch (e) {
       throw { kind: "network", message: offlineReason() };
     }
@@ -872,15 +941,21 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     let misses = 0, dupes = 0;
     try {
       while (queue.length < QUEUE_TARGET && myGen === gen) {
-        const raw = await fetchRandom(buildQuery(filters));
-        if (myGen !== gen) break;
-        const card = normalize(raw);
-        if (!card) {
-          if (++misses > 8) throw { kind: "empty", message: "No cards with images match these filters." };
-          continue;
+        let card;
+        if (deck) {
+          card = drawFromDeck();
+          if (!card) throw { kind: "empty", message: deck.kind === "favs" ? "You have no favorites yet. Double-tap a card to keep it." : "The shared cards couldn't be loaded." };
+        } else {
+          const raw = await fetchRandom(buildQuery(filters));
+          if (myGen !== gen) break;
+          card = normalize(raw);
+          if (!card) {
+            if (++misses > 8) throw { kind: "empty", message: "No cards with images match these filters." };
+            continue;
+          }
+          // Avoid repeats, but allow them eventually when the search only has a few cards
+          if (knownIds().has(card.id) && ++dupes <= 6) continue;
         }
-        // Avoid repeats, but allow them eventually when the search only has a few cards
-        if (knownIds().has(card.id) && ++dupes <= 6) continue;
         try { await preload(card, imageKind()); }
         catch (e) {
           if (++misses > 8) throw { kind: "network", message: "Card images can't be loaded right now." };
@@ -1005,6 +1080,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     const artist = firstArtist(card.artist);
     $("ciMore").hidden = !artist || artist === filters.artist;
     $("ciMore").textContent = "More art by " + artist + " →";
+    renderFavState(card);
   }
 
   // ---------- More art by this artist ----------
@@ -1017,6 +1093,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     if (artist === filters.artist) { toast("Already showing art by " + artist); return; }
     // An artist search ignores the other card filters; language and view stay as they are
     filters = Object.assign({}, filters, { artist, colors: [], types: [], rarities: [], eras: [], format: "", custom: "" });
+    deck = null;
     saveState();
     if (sheet.classList.contains("open")) closeSheet();
     toast("More art by " + artist);
@@ -1152,6 +1229,11 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
       animating = false;
       dismissCoach();
       if (slideshowOn()) scheduleSlide(); // a manual swipe restarts the countdown too
+      // One quiet hint, once, for people who haven't found favorites yet
+      if (++seen === 8 && !favs.length && !readFlag("favTip")) {
+        toast("Tip: double-tap a card to keep it as a favorite.");
+        saveState({ favTip: true });
+      }
     }, dur + 20);
   }
 
@@ -1221,10 +1303,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     const d = drag; drag = null;
     stage.classList.remove("dragging");
     if (!d.moved) {
-      if (e.type === "pointerup" && performance.now() - d.t0 < 450 && pos >= 0) {
-        const artist = artistAt(e.clientX, e.clientY);
-        if (artist) moreByArtist(artist); else turnCard();
-      }
+      if (e.type === "pointerup" && performance.now() - d.t0 < 450 && pos >= 0) handleTap(e.clientX, e.clientY);
       return;
     }
     const dt = Math.max(1, performance.now() - d.t0);
@@ -1237,6 +1316,24 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     }
     snapBack();
   };
+  // One tap turns the card (or opens the artist), two quick taps keep it as a favorite
+  let lastTap = null, tapTimer = null;
+  function handleTap(x, y) {
+    const now = performance.now();
+    if (lastTap && now - lastTap.t < 320 && Math.hypot(x - lastTap.x, y - lastTap.y) < 40) {
+      clearTimeout(tapTimer);
+      lastTap = null;
+      favoriteByTap();
+      return;
+    }
+    lastTap = { t: now, x, y };
+    clearTimeout(tapTimer);
+    tapTimer = setTimeout(() => {
+      lastTap = null;
+      const artist = artistAt(x, y);
+      if (artist) moreByArtist(artist); else turnCard();
+    }, 260);
+  }
   stage.addEventListener("pointerup", endDrag);
   stage.addEventListener("pointercancel", endDrag);
   stage.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -1246,6 +1343,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     // Enter and Space on a button belong to that button
     if ((e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest("button")) return;
     if (!$("qr").hidden) { if (e.key === "Escape") closeQr(); return; }
+    if (!$("importBox").hidden) { if (e.key === "Escape") closeImport(); return; }
     const open = sheet.classList.contains("open");
     if (e.key === "Escape" && open) { closeSheet(); return; }
     if (e.key === "Escape" && slideshowOn()) { stopSlideshow(); return; }
@@ -1256,6 +1354,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); next(); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); prev(); }
     else if (e.key === "f" || e.key === "F" || e.key === "Enter") { e.preventDefault(); turnCard(); }
+    else if (e.key === "l" || e.key === "L") { toggleFavorite(); }
   });
 
   // ---------- Sheet ----------
@@ -1267,6 +1366,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     menuBtn.setAttribute("aria-expanded", "true");
     $("thisCard").hidden = !current();
     renderInfo(current());
+    renderFavs();
     scheduleSlide(); // pauses the slideshow while the menu is open
     setTimeout(() => $("closeBtn").focus({ preventScroll: true }), 50);
   }
@@ -1346,8 +1446,9 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   $("filters").addEventListener("submit", (e) => {
     e.preventDefault();
     const f = readForm();
-    const changed = buildQuery(f) !== buildQuery(filters);
+    const changed = buildQuery(f) !== buildQuery(filters) || !!deck; // filters always deal from all cards
     filters = f;
+    deck = null;
     saveState();
     if (!changed) { closeSheet(); return; }
     waitingForNext = true;
@@ -1445,6 +1546,212 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     toastTimer = setTimeout(() => t.classList.remove("show"), 2400);
   }
 
+  // ---------- Favorites: kept in this browser, no account ----------
+  const FAV_KEY = "ponder.favs.v1";
+  const FAV_SHARE_MAX = 300;       // keeps a shared link under about 7,000 characters
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  let favs = loadFavs();           // newest first
+  let favsExpanded = false;
+  let importCards = [];
+
+  function loadFavs() {
+    try {
+      const list = JSON.parse(localStorage.getItem(FAV_KEY) || "[]");
+      return Array.isArray(list) ? list.filter((c) => c && UUID.test(c.id) && Array.isArray(c.faces) && c.faces.length) : [];
+    } catch (e) { return []; }
+  }
+  function saveFavs() {
+    try { localStorage.setItem(FAV_KEY, JSON.stringify(favs)); return true; }
+    catch (e) { toast("Favorites couldn't be saved. Is this a private window?"); return false; }
+  }
+  const isFav = (card) => !!card && favs.some((f) => f.id === card.id);
+  // Everything needed to show the card again later, without asking Scryfall
+  const slim = (c) => ({ id: c.id, faces: c.faces, turn: c.turn, name: c.name, type: c.type, set: c.set, number: c.number, rarity: c.rarity, artist: c.artist, url: c.url });
+  const revive = (c) => Object.assign({}, c, { ready: {} });
+  const thumbOf = (c) => c.faces[0].full.replace("/large/", "/normal/");
+
+  function addFavorite(card) {
+    favs.unshift(slim(card));
+    if (!saveFavs()) { favs.shift(); return; }
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    popHeart();
+  }
+  // Double-tap only ever adds, like a "like"; removing is a deliberate step in the menu or with L
+  function favoriteByTap() {
+    const card = current();
+    if (!card) return;
+    if (isFav(card)) popHeart(); else addFavorite(card);
+    renderFavState(card);
+    renderFavs();
+  }
+  function toggleFavorite() {
+    const card = current();
+    if (!card) return;
+    if (isFav(card)) {
+      favs = favs.filter((f) => f.id !== card.id);
+      saveFavs();
+      toast("Removed from favorites");
+    } else {
+      addFavorite(card);
+    }
+    renderFavState(card);
+    renderFavs();
+  }
+  function popHeart() {
+    if (reduceMotion) { toast("Added to favorites"); return; }
+    const el = $("heartPop");
+    el.classList.remove("go");
+    void el.offsetWidth;
+    el.classList.add("go");
+  }
+  function renderFavState(card) {
+    const on = isFav(card);
+    $("favMark").hidden = !on;
+    $("favToggle").textContent = on ? "♥ Favorite" : "♡ Add to favorites";
+    $("favToggle").setAttribute("aria-pressed", String(on));
+  }
+  function renderFavs() {
+    const n = favs.length;
+    $("favCount").textContent = n ? "(" + n + ")" : "";
+    $("favEmpty").hidden = n > 0;
+    $("favNote").hidden = n === 0;
+    $("favActions").hidden = n === 0;
+    const grid = $("favGrid");
+    grid.textContent = "";
+    for (const c of favsExpanded ? favs : favs.slice(0, 12)) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("aria-label", "Show " + c.name);
+      const img = document.createElement("img");
+      img.loading = "lazy";
+      img.alt = "";
+      img.src = thumbOf(c);
+      b.append(img);
+      b.addEventListener("click", () => openCard(c));
+      grid.append(b);
+    }
+    $("favMoreBtn").hidden = favsExpanded || n <= 12;
+    $("favMoreBtn").textContent = "Show all " + n;
+    $("deckLine").hidden = !deck;
+    if (deck) $("deckText").textContent = deck.kind === "favs" ? "Shuffling your favorites." : "Shuffling " + deck.cards.length + " shared cards.";
+    $("favShuffleBtn").hidden = !!deck && deck.kind === "favs";
+  }
+  // Show one stored card right now, then carry on as before
+  function openCard(stored) {
+    if (animating) return;
+    closeSheet();
+    history.splice(pos + 1, 0, revive(stored));
+    next();
+  }
+
+  // Deal from favorites or a shared list instead of all of Scryfall
+  const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  function drawFromDeck() {
+    const cards = deck.kind === "favs" ? favs : deck.cards;
+    if (!cards.length) return null;
+    const ids = new Set(cards.map((c) => c.id));
+    deck.bag = deck.bag.filter((c) => ids.has(c.id)); // a favorite may have been removed meanwhile
+    if (!deck.bag.length) {
+      deck.bag = shuffle(cards.slice());
+      // no card twice in a row where one shuffle ends and the next begins
+      const top = deck.bag.length - 1;
+      if (top > 0 && deck.bag[top].id === deck.last) [deck.bag[0], deck.bag[top]] = [deck.bag[top], deck.bag[0]];
+    }
+    const card = deck.bag.pop();
+    deck.last = card.id;
+    return revive(card);
+  }
+  function dealFrom(kind, cards) {
+    deck = { kind, cards: cards || [], bag: [] };
+    if (sheet.classList.contains("open")) closeSheet();
+    toast(kind === "favs" ? "Shuffling your favorites" : "Shuffling the shared cards");
+    waitingForNext = true;
+    restartQueue();
+    renderFavs();
+  }
+  function dealEverything() {
+    deck = null;
+    renderFavs();
+    if (sheet.classList.contains("open")) closeSheet();
+    toast("Back to all cards");
+    waitingForNext = true;
+    restartQueue();
+  }
+
+  // Card ids travel in links as 22 characters instead of 36
+  function idToCode(id) {
+    const hex = id.replace(/-/g, "");
+    let bin = "";
+    for (let i = 0; i < 32; i += 2) bin += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function codeToId(code) {
+    try {
+      const bin = atob(code.replace(/-/g, "+").replace(/_/g, "/") + "==");
+      let hex = "";
+      for (let i = 0; i < bin.length; i++) hex += bin.charCodeAt(i).toString(16).padStart(2, "0");
+      return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20, 32)].join("-");
+    } catch (e) { return ""; }
+  }
+
+  $("favToggle").addEventListener("click", toggleFavorite);
+  $("favMoreBtn").addEventListener("click", () => { favsExpanded = true; renderFavs(); });
+  $("favShuffleBtn").addEventListener("click", () => dealFrom("favs"));
+  $("deckBack").addEventListener("click", dealEverything);
+  $("favShareBtn").addEventListener("click", () => {
+    const list = favs.slice(0, FAV_SHARE_MAX);
+    const url = new URL(appUrl());
+    url.searchParams.set("favs", list.map((c) => idToCode(c.id)).join("."));
+    shareLink(url.toString(), "My Ponder favorites", list.length + " favorite Magic: The Gathering cards, shared from Ponder.");
+    if (favs.length > FAV_SHARE_MAX) toast("The link holds your " + FAV_SHARE_MAX + " newest favorites.");
+  });
+
+  // Someone opened a favorites link: load the cards, then let them choose
+  async function importShared(codes) {
+    const ids = [...new Set(codes.map(codeToId).filter((id) => UUID.test(id)))];
+    if (!ids.length) return;
+    $("importTitle").textContent = ids.length === 1 ? "A shared favorite" : ids.length + " shared favorites";
+    $("importText").textContent = "Loading the cards …";
+    $("importThumbs").textContent = "";
+    $("importAdd").disabled = true;
+    $("importShow").disabled = true;
+    $("importBox").hidden = false;
+    const cards = [];
+    for (let i = 0; i < ids.length; i += 75) { // Scryfall answers up to 75 cards per request
+      try {
+        const data = await scryfall("https://api.scryfall.com/cards/collection", { identifiers: ids.slice(i, i + 75).map((id) => ({ id })) });
+        for (const raw of data.data || []) { const c = normalize(raw); if (c) cards.push(c); }
+      } catch (e) {}
+    }
+    if (!cards.length) { $("importText").textContent = "These cards couldn't be loaded right now. Try the link again later."; return; }
+    cards.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    importCards = cards.map(slim);
+    const known = cards.filter(isFav).length;
+    $("importText").textContent = "Someone shared " + (cards.length === 1 ? "this card" : "these " + cards.length + " cards") + " with you."
+      + (known ? " " + (known === cards.length ? "All of them are" : known + " of them are") + " already in your favorites." : "");
+    for (const c of cards.slice(0, 8)) {
+      const img = document.createElement("img");
+      img.src = thumbOf(c);
+      img.alt = c.name;
+      $("importThumbs").append(img);
+    }
+    $("importAdd").disabled = known === cards.length;
+    $("importShow").disabled = false;
+    $("importShow").focus({ preventScroll: true });
+  }
+  function closeImport() { $("importBox").hidden = true; }
+  $("importAdd").addEventListener("click", () => {
+    const known = new Set(favs.map((f) => f.id));
+    const added = importCards.filter((c) => !known.has(c.id));
+    favs = added.concat(favs);
+    if (saveFavs()) toast("Added " + added.length + (added.length === 1 ? " favorite" : " favorites"));
+    renderFavState(current());
+    renderFavs();
+    closeImport();
+  });
+  $("importShow").addEventListener("click", () => { closeImport(); dealFrom("shared", importCards); });
+  $("importSkip").addEventListener("click", closeImport);
+
   // ---------- Share & install ----------
   const appUrl = () => location.origin + location.pathname;
 
@@ -1535,8 +1842,9 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     const params = new URLSearchParams(location.search);
     const sharedId = params.get("card") || "";
     const sharedView = params.get("view");
+    const favCodes = (params.get("favs") || "").split(".").filter(Boolean).slice(0, FAV_SHARE_MAX);
     // window.history: the plain name "history" is Ponder's own list of shown cards
-    if (params.has("card") || params.has("view")) window.history.replaceState(null, "", location.pathname);
+    if (params.has("card") || params.has("view") || params.has("favs")) window.history.replaceState(null, "", location.pathname);
     if (VIEWS.includes(sharedView)) { filters.view = sharedView; saveState(); }
 
     document.body.dataset.view = filters.view;
@@ -1559,6 +1867,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     }
     if (pos < 0) waitingForNext = true;
     fill();
+    if (favCodes.length) importShared(favCodes);
   }
   start();
 })();
