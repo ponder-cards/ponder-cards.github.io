@@ -4,7 +4,7 @@
 
 Swipe through random *Magic: The Gathering* cards. One card at a time, nothing else on screen.
 
-**Open Ponder:** https://benjhuang.github.io/ponder/
+**Open Ponder:** https://ponder-cards.github.io/
 
 ## What it does
 

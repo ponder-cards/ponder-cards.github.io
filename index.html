@@ -14,14 +14,14 @@
 <meta property="og:title" content="Ponder">
 <meta property="og:description" content="Swipe through random Magic: The Gathering cards. One card at a time, nothing else on screen.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://benjhuang.github.io/ponder/">
-<meta property="og:image" content="https://benjhuang.github.io/ponder/og-image.png">
+<meta property="og:url" content="https://ponder-cards.github.io/">
+<meta property="og:image" content="https://ponder-cards.github.io/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Ponder: swipe through random Magic: The Gathering cards">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://benjhuang.github.io/ponder/og-image.png">
-<link rel="canonical" href="https://benjhuang.github.io/ponder/">
+<meta name="twitter:image" content="https://ponder-cards.github.io/og-image.png">
+<link rel="canonical" href="https://ponder-cards.github.io/">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
@@ -1947,15 +1947,17 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   $("galShuffle").addEventListener("click", () => { closeGallery(); dealFrom("favs"); });
   $("galShare").addEventListener("click", shareFavs);
 
-  // Someone opened a favorites link: load the cards, then let them choose
-  async function importShared(codes) {
+  // Someone opened a favorites link: load the cards, then let them choose.
+  // "moved" means the old address sent this browser's own favorites along after Ponder changed its address.
+  async function importShared(codes, moved) {
     const ids = [...new Set(codes.map(codeToId).filter((id) => UUID.test(id)))];
     if (!ids.length) return;
-    $("importTitle").textContent = ids.length === 1 ? "A shared favorite" : ids.length + " shared favorites";
+    $("importTitle").textContent = moved ? "Ponder has a new address" : ids.length === 1 ? "A shared favorite" : ids.length + " shared favorites";
     $("importText").textContent = "Loading the cards …";
     $("importThumbs").textContent = "";
     $("importAdd").disabled = true;
     $("importShow").disabled = true;
+    $("importShow").hidden = !!moved;
     $("importBox").hidden = false;
     const cards = [];
     for (let i = 0; i < ids.length; i += 75) { // Scryfall answers up to 75 cards per request
@@ -1968,8 +1970,10 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     cards.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
     importCards = cards.map(slim);
     const known = cards.filter(isFav).length;
-    $("importText").textContent = "Someone shared " + (cards.length === 1 ? "this card" : "these " + cards.length + " cards") + " with you."
-      + (known ? " " + (known === cards.length ? "All of them are" : known + " of them are") + " already in your favorites." : "");
+    $("importText").textContent = moved
+      ? "Your favorites from the old address are here. Keep " + (cards.length === 1 ? "it" : "all " + cards.length) + "?"
+      : "Someone shared " + (cards.length === 1 ? "this card" : "these " + cards.length + " cards") + " with you."
+        + (known ? " " + (known === cards.length ? "All of them are" : known + " of them are") + " already in your favorites." : "");
     for (const c of cards.slice(0, 8)) {
       const img = document.createElement("img");
       img.src = thumbOf(c);
@@ -1978,7 +1982,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     }
     $("importAdd").disabled = known === cards.length;
     $("importShow").disabled = false;
-    $("importShow").focus({ preventScroll: true });
+    (moved ? $("importAdd") : $("importShow")).focus({ preventScroll: true });
   }
   function closeImport() { $("importBox").hidden = true; }
   $("importAdd").addEventListener("click", () => {
@@ -2085,7 +2089,8 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     const sharedView = params.get("view");
     const favCodes = (params.get("favs") || "").split(".").filter(Boolean).slice(0, FAV_SHARE_MAX);
     // window.history: the plain name "history" is Ponder's own list of shown cards
-    if (params.has("card") || params.has("view") || params.has("favs")) window.history.replaceState(null, "", location.pathname);
+    const moved = params.has("moved");
+    if (params.has("card") || params.has("view") || params.has("favs") || moved) window.history.replaceState(null, "", location.pathname);
     if (VIEWS.includes(sharedView)) { filters.view = sharedView; saveState(); }
 
     document.body.dataset.view = filters.view;
@@ -2109,7 +2114,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     }
     if (pos < 0) waitingForNext = true;
     fill();
-    if (favCodes.length) importShared(favCodes);
+    if (favCodes.length) importShared(favCodes, moved);
   }
   start();
 })();
