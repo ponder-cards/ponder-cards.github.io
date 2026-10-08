@@ -272,7 +272,25 @@ body:not([data-view="card"]) .turn-hint { bottom: auto; top: 0; }
 @keyframes progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 /* In art-only view the picture drifts slowly closer while it is on screen */
 @keyframes drift { from { transform: scale(1); } to { transform: scale(1.06); } }
-body.slideshow[data-view="art"] .card:not(.under) .face .art { animation: drift var(--slide-ms, 10s) ease-out both; }
+/* "drift" is set by the script: on unless the system asks for less motion and no motion was chosen explicitly */
+body.slideshow.drift[data-view="art"] .card:not(.under) .face .art { animation: drift var(--slide-ms, 10s) ease-out both; }
+/* "As large as possible": the picture uses the whole screen, nothing is cropped */
+body.slideshow.fit[data-view="card"] .card {
+  height: min(calc(100dvh - 8px - var(--safe-y)), calc((100vw - 8px - var(--safe-x)) / var(--card-ratio)));
+}
+body.slideshow.fit:not([data-view="card"]) .card {
+  width: calc(100vw - var(--safe-x));
+  height: calc(100dvh - var(--safe-y));
+}
+body.slideshow.fit[data-view="art"] .face .art { max-height: 100%; border-radius: 0; box-shadow: none; }
+body.slideshow.fit[data-view="art"] .face .lore { position: absolute; right: 12px; bottom: 10px; text-align: right; opacity: .8; }
+body.slideshow.fit[data-view="lore"] .face .art { max-height: 74%; }
+/* The slow zoom then grows up to the full size instead of beyond it */
+body.slideshow.drift.fit[data-view="art"] .card .face .art { transform: scale(.96); }
+body.slideshow.drift.fit[data-view="art"] .card:not(.under) .face .art { animation-name: drift-fit; }
+@keyframes drift-fit { from { transform: scale(.96); } to { transform: scale(1); } }
+.slide-settings { display: grid; gap: 14px; }
+.slide-settings > .label, .slide-settings > .hint { margin: 0; }
 body.slideshow.idle .menu-btn { opacity: 0; }
 body.slideshow.idle .progress { opacity: .22; }
 body.slideshow.idle, body.slideshow.idle .stage { cursor: none; }
@@ -377,17 +395,67 @@ body.slideshow.idle .fav-mark { opacity: 0; }
   45% { transform: scale(1); }
   100% { opacity: 0; transform: scale(1.04); }
 }
-.fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
-.fav-grid button {
-  padding: 0; border: 0; border-radius: 5px; overflow: hidden;
-  aspect-ratio: 63 / 88; background: #15131a; cursor: pointer;
+/* In the menu: one row of the newest favorites, never longer */
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.fav-strip {
+  display: flex; gap: 8px;
+  overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x pan-y;
+  scroll-snap-type: x proximity; scrollbar-width: thin;
+  padding-bottom: 4px;
 }
-.fav-grid button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.fav-grid img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.fav-strip:empty { display: none; }
+.fav-strip button {
+  flex: 0 0 auto; width: 62px; aspect-ratio: 63 / 88;
+  padding: 0; border: 0; border-radius: 4px; overflow: hidden;
+  background: #15131a; scroll-snap-align: start; cursor: pointer;
+}
+.fav-strip button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fav-strip img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.fav-strip .more {
+  display: grid; place-items: center; padding: 4px;
+  background: rgba(236,230,220,.05); border: 1px dashed var(--line);
+  color: var(--ink-dim); font: 500 12px/1.25 var(--font-ui); text-align: center;
+}
 .deck-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; font-size: 14px; margin: 0 0 10px; }
 #favEmpty { margin-top: 0; }
-#favMoreBtn { margin-top: 10px; }
 #favActions { margin-top: 12px; }
+
+/* All favorites: a page of their own, with search, sorting and editing */
+.gallery {
+  position: fixed; inset: 0; z-index: 15;
+  display: flex; flex-direction: column;
+  background: var(--table);
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.gal-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px 10px 20px; }
+.gal-head h2 { flex: 1; min-width: 0; margin: 0; font: 600 22px/1.2 var(--font-display); }
+.gal-head h2 span { font: 500 14px var(--font-ui); color: var(--ink-dim); }
+.gal-edit { min-height: 36px; padding: 0 14px; font-size: 14px; }
+.gal-edit[aria-pressed="true"] { background: rgba(217,181,106,.16); border-color: var(--accent); }
+.gal-tools { display: flex; gap: 10px; padding: 0 20px 12px; }
+.gal-tools input { flex: 1 1 auto; min-width: 0; }
+.gal-tools select { flex: 0 0 auto; width: auto; }
+.gal-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 6px 20px 20px; }
+.gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 16px 10px; }
+.gal-item {
+  position: relative; display: grid; gap: 6px; min-width: 0;
+  padding: 0; border: 0; background: none; color: var(--ink);
+  font: 500 12.5px/1.25 var(--font-ui); text-align: left; cursor: pointer;
+}
+.gal-item img { display: block; width: 100%; aspect-ratio: 63 / 88; object-fit: cover; border-radius: 5px; background: #15131a; }
+.gal-item .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gal-item .x {
+  display: none; position: absolute; top: -7px; right: -7px;
+  width: 26px; height: 26px; border-radius: 50%; place-items: center;
+  background: var(--danger); color: #1a0f0c; font-size: 17px; font-weight: 600; line-height: 1;
+  box-shadow: 0 2px 8px rgba(0,0,0,.5);
+}
+.gallery.editing .gal-item .x { display: grid; }
+.gallery.editing .gal-item img { opacity: .8; }
+.gal-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.gal-note { margin-top: 22px; }
+.gal-foot { padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); }
+.gal-foot button:disabled { opacity: .45; cursor: default; }
 .import-thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 100%; }
 .qr-card .import-thumbs img { aspect-ratio: 63 / 88; object-fit: cover; border-radius: 4px; background: #ddd5c8; image-rendering: auto; }
 .qr-card p { margin: 0; color: #4a4450; font-size: 14.5px; }
@@ -422,7 +490,7 @@ body.slideshow.idle .fav-mark { opacity: 0; }
 
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 380px) { .row2 { grid-template-columns: 1fr; } }
-select, input[type="text"] {
+select, input[type="text"], input[type="search"] {
   width: 100%; min-height: 40px;
   padding: 8px 12px; border-radius: 10px;
   border: 1px solid var(--line); background: rgba(0,0,0,.25); color: var(--ink);
@@ -478,7 +546,6 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
 @media (prefers-reduced-motion: reduce) {
   .card-inner, .face, .sheet, .scrim, .ambient, .toast { transition-duration: .01s !important; }
   .card.empty::after { animation: none; }
-  body.slideshow .face .art { animation: none !important; }
 }
 </style>
 </head>
@@ -545,16 +612,17 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     </div>
 
     <div>
-      <p class="label">Favorites <span id="favCount"></span></p>
+      <div class="section-head">
+        <p class="label">Favorites <span id="favCount"></span></p>
+        <button type="button" class="ext" id="favAllBtn" hidden>See all →</button>
+      </div>
       <p class="deck-line" id="deckLine" hidden><span id="deckText"></span><button type="button" class="ext" id="deckBack">Back to all cards</button></p>
       <p class="hint" id="favEmpty">Double-tap a card to keep it here. No account needed.</p>
-      <div class="fav-grid" id="favGrid"></div>
-      <button type="button" class="ext" id="favMoreBtn" hidden>Show all</button>
+      <div class="fav-strip" id="favStrip"></div>
       <div class="actions" id="favActions" hidden>
         <button type="button" class="ghost" id="favShuffleBtn">Shuffle favorites</button>
         <button type="button" class="ghost" id="favShareBtn">Share favorites</button>
       </div>
-      <p class="hint" id="favNote" hidden>Favorites are saved in this browser. Share them as a link to move them to another device or to keep a backup.</p>
     </div>
 
     <div>
@@ -683,18 +751,29 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
       </div>
     </form>
 
-    <div>
+    <div class="slide-settings">
       <p class="label">Slideshow</p>
-      <div class="actions">
-        <select id="slideSec" aria-label="Time per card">
-          <option value="5">5 seconds per card</option>
-          <option value="10">10 seconds per card</option>
-          <option value="20">20 seconds per card</option>
-          <option value="30">30 seconds per card</option>
-          <option value="60">1 minute per card</option>
-        </select>
-        <button type="button" class="primary" id="slideBtn">Start slideshow</button>
+      <div class="row2">
+        <div>
+          <p class="label"><label for="slideSec">Time per card</label></p>
+          <select id="slideSec">
+            <option value="5">5 seconds</option>
+            <option value="10">10 seconds</option>
+            <option value="20">20 seconds</option>
+            <option value="30">30 seconds</option>
+            <option value="60">1 minute</option>
+          </select>
+        </div>
+        <div>
+          <p class="label"><label for="slideFx">Transition</label></p>
+          <select id="slideFx">
+            <option value="toss">Card swipe</option>
+            <option value="fade">Crossfade</option>
+          </select>
+        </div>
       </div>
+      <label class="toggle"><input type="checkbox" id="slideFit" checked> As large as possible, nothing cropped</label>
+      <button type="button" class="primary" id="slideBtn">Start slideshow</button>
       <p class="hint">Cards change by themselves and the screen stays on. Swiping still works. Try it with “Art only” on a tablet or TV.</p>
     </div>
 
@@ -716,6 +795,33 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
       <p>Ponder is unofficial fan content, permitted under the Wizards of the Coast Fan Content Policy. It is not approved or endorsed by Wizards. Card images, artwork and text are property of Wizards of the Coast. © Wizards of the Coast LLC.</p>
     </div>
   </div>
+</section>
+
+<section class="gallery" id="gallery" hidden role="dialog" aria-modal="true" aria-labelledby="galTitle">
+  <header class="gal-head">
+    <h2 id="galTitle">Favorites <span id="galCount"></span></h2>
+    <button type="button" class="ext" id="galUndo" hidden>Undo</button>
+    <button type="button" class="ghost gal-edit" id="galEdit" aria-pressed="false">Edit</button>
+    <button type="button" class="close-btn" id="galClose" aria-label="Close">×</button>
+  </header>
+  <div class="gal-tools">
+    <input type="search" id="galSearch" placeholder="Name, artist or type" aria-label="Search favorites" autocomplete="off" spellcheck="false">
+    <select id="galSort" aria-label="Sort favorites">
+      <option value="newest">Newest first</option>
+      <option value="oldest">Oldest first</option>
+      <option value="name">Name A–Z</option>
+      <option value="artist">Artist A–Z</option>
+    </select>
+  </div>
+  <div class="gal-body">
+    <p class="hint" id="galNone" hidden></p>
+    <div class="gal-grid" id="galGrid"></div>
+    <p class="hint gal-note">Favorites are saved in this browser. Share them as a link to move them to another device or to keep a backup.</p>
+  </div>
+  <footer class="gal-foot actions">
+    <button type="button" class="ghost" id="galShuffle">Shuffle favorites</button>
+    <button type="button" class="ghost" id="galShare">Share favorites</button>
+  </footer>
 </section>
 
 <div class="qr" id="qr" hidden role="dialog" aria-modal="true" aria-label="QR code for Ponder">
@@ -756,7 +862,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
 
   const ERAS = { "90s": "year<=1999", "00s": "(year>=2000 year<=2009)", "10s": "(year>=2010 year<=2019)", "20s": "year>=2020" };
 
-  const DEFAULT_FILTERS = { colors: [], types: [], rarities: [], eras: [], artist: "", format: "", lang: "en", custom: "", noBasics: true, ambient: true, view: "card", slideSec: 10 };
+  const DEFAULT_FILTERS = { colors: [], types: [], rarities: [], eras: [], artist: "", format: "", lang: "en", custom: "", noBasics: true, ambient: true, view: "card", slideSec: 10, slideFx: "", slideFit: true };
 
   // ---------- State ----------
   let filters = loadFilters();
@@ -1183,42 +1289,53 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     underEl.hidden = true;
   }
 
-  function next() {
+  function next(fx) {
     if (!peek(1)) { waitingForNext = true; topEl.classList.add("empty"); fill(); return; }
-    animateOut(1);
+    animateOut(1, undefined, undefined, fx);
   }
   function prev() {
     if (!peek(-1)) { bump(); return; }
     animateOut(-1);
   }
 
-  // The card flies off; the next one is already lying underneath
-  function animateOut(dir, fromX, fromY) {
+  // The card flies off (or fades away); the next one is already lying underneath.
+  // fx comes from the slideshow ("toss" or "fade") and then wins over the system's reduced-motion setting,
+  // because it was picked on purpose.
+  function animateOut(dir, fromX, fromY, fx) {
     if (animating) return;
     const target = peek(dir);
     if (!target) return;
     if (pos < 0) { step(dir); showCurrent(); return; } // very first card: no animation
     animating = true;
+    const fade = fx === "fade";
     if (fromX === undefined) {
-      // via keyboard: prepare the card underneath first
+      // not dragged: prepare the card underneath first
       paint(underEl, target);
       underEl.style.transition = "none";
-      underEl.style.transform = "scale(.92)";
-      underEl.style.opacity = ".35";
+      underEl.style.transform = fade ? "none" : "scale(.92)";
+      underEl.style.opacity = fade ? "0" : ".35";
     }
     underEl.hidden = false;
     void underEl.offsetWidth; // commit the start state so the transition runs
 
-    const x = (dir > 0 ? -1 : 1) * (window.innerWidth * 1.15);
-    const y = (fromY || 0) * 1.2;
-    const rot = (dir > 0 ? -1 : 1) * 22;
-    const dur = reduceMotion ? 10 : 260;
-
-    topEl.style.transition = `transform ${dur}ms cubic-bezier(.4,0,.6,1)`;
-    underEl.style.transition = `transform ${dur}ms var(--ease-out), opacity ${dur}ms`;
-    topEl.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg)`;
-    underEl.style.transform = "scale(1)";
-    underEl.style.opacity = "1";
+    const dur = fx ? (fade ? 1100 : 560) : (reduceMotion ? 10 : 260);
+    if (fade) {
+      topEl.style.transition = `opacity ${dur}ms ease`;
+      underEl.style.transition = `opacity ${dur}ms ease`;
+      topEl.style.opacity = "0";
+      underEl.style.opacity = "1";
+    } else {
+      const x = (dir > 0 ? -1 : 1) * (window.innerWidth * 1.15);
+      const y = (fromY || 0) * 1.2;
+      const rot = (dir > 0 ? -1 : 1) * 22;
+      // a slideshow card starts slowly and picks up speed, like a card pushed off the table
+      const ease = fx ? "cubic-bezier(.55,0,.8,.45)" : "cubic-bezier(.4,0,.6,1)";
+      topEl.style.transition = `transform ${dur}ms ${ease}`;
+      underEl.style.transition = `transform ${dur}ms var(--ease-out), opacity ${dur}ms`;
+      topEl.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg)`;
+      underEl.style.transform = "scale(1)";
+      underEl.style.opacity = "1";
+    }
 
     setTimeout(() => {
       step(dir);
@@ -1339,11 +1456,15 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   stage.addEventListener("contextmenu", (e) => e.preventDefault());
 
   document.addEventListener("keydown", (e) => {
-    if (e.target.closest && e.target.closest("input, select, textarea")) return;
+    if (e.target.closest && e.target.closest("input, select, textarea")) {
+      if (e.key === "Escape" && !$("gallery").hidden) closeGallery(); // also from the search field
+      return;
+    }
     // Enter and Space on a button belong to that button
     if ((e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest("button")) return;
     if (!$("qr").hidden) { if (e.key === "Escape") closeQr(); return; }
     if (!$("importBox").hidden) { if (e.key === "Escape") closeImport(); return; }
+    if (!$("gallery").hidden) { if (e.key === "Escape") closeGallery(); return; }
     const open = sheet.classList.contains("open");
     if (e.key === "Escape" && open) { closeSheet(); return; }
     if (e.key === "Escape" && slideshowOn()) { stopSlideshow(); return; }
@@ -1417,13 +1538,15 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     $("noBasics").checked = filters.noBasics;
     $("ambientOn").checked = filters.ambient;
     $("slideSec").value = String(filters.slideSec);
+    $("slideFx").value = slideFx();
+    $("slideFit").checked = !!filters.slideFit;
     $("artistFilter").hidden = !filters.artist;
     $("artistChipName").textContent = filters.artist;
     syncViews();
     syncSlideshow();
   }
   function readForm() {
-    const f = { view: filters.view, ambient: filters.ambient, slideSec: filters.slideSec, artist: $("artistFilter").hidden ? "" : filters.artist };
+    const f = { view: filters.view, ambient: filters.ambient, slideSec: filters.slideSec, slideFx: filters.slideFx, slideFit: filters.slideFit, artist: $("artistFilter").hidden ? "" : filters.artist };
     document.querySelectorAll(".chips[data-group]").forEach((g) => {
       f[g.dataset.group] = [...g.querySelectorAll('.chip[aria-pressed="true"]')].map((b) => b.dataset.v);
     });
@@ -1459,7 +1582,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   // Only resets the form; it takes effect with "Apply filters"
   $("resetBtn").addEventListener("click", () => {
     const saved = filters;
-    filters = Object.assign({}, DEFAULT_FILTERS, { ambient: saved.ambient, view: saved.view, slideSec: saved.slideSec });
+    filters = Object.assign({}, DEFAULT_FILTERS, { ambient: saved.ambient, view: saved.view, slideSec: saved.slideSec, slideFx: saved.slideFx, slideFit: saved.slideFit });
     syncForm();
     filters = saved;
   });
@@ -1468,6 +1591,9 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   let slideTimer = null, idleTimer = null, wakeLock = null;
   const slideshowOn = () => document.body.classList.contains("slideshow");
   const slideMs = () => (Number(filters.slideSec) || 10) * 1000;
+  // Without an explicit choice, a system that asks for less motion gets the gentle crossfade
+  const slideFx = () => filters.slideFx || (reduceMotion ? "fade" : "toss");
+  function syncDrift() { document.body.classList.toggle("drift", !reduceMotion || filters.slideFx === "toss"); }
 
   function scheduleSlide() {
     clearTimeout(slideTimer);
@@ -1480,7 +1606,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     bar.style.animation = `progress ${ms}ms linear forwards`;
     slideTimer = setTimeout(() => {
       if (drag) { scheduleSlide(); return; } // someone is holding the card; try again later
-      next();
+      next(slideFx());
       if (!animating) scheduleSlide();     // otherwise the swipe animation restarts the timer
     }, ms);
   }
@@ -1491,6 +1617,8 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   function startSlideshow() {
     if (slideshowOn()) return;
     document.body.classList.add("slideshow");
+    document.body.classList.toggle("fit", !!filters.slideFit);
+    syncDrift();
     document.documentElement.style.setProperty("--slide-ms", slideMs() + "ms");
     // Full screen on computers; phones show the app edge to edge anyway
     if (!matchMedia("(pointer: coarse)").matches && document.documentElement.requestFullscreen && !document.fullscreenElement) {
@@ -1505,7 +1633,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   }
   function stopSlideshow() {
     if (!slideshowOn()) return;
-    document.body.classList.remove("slideshow", "idle");
+    document.body.classList.remove("slideshow", "idle", "fit");
     clearTimeout(slideTimer);
     $("progress").hidden = true;
     if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
@@ -1533,6 +1661,16 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     document.documentElement.style.setProperty("--slide-ms", slideMs() + "ms");
     saveState();
   });
+  $("slideFx").addEventListener("change", (e) => {
+    filters.slideFx = e.target.value;
+    syncDrift();
+    saveState();
+  });
+  $("slideFit").addEventListener("change", (e) => {
+    filters.slideFit = e.target.checked;
+    document.body.classList.toggle("fit", slideshowOn() && filters.slideFit);
+    saveState();
+  });
 
   function showStatus(msg) { const s = $("status"); s.textContent = msg; s.hidden = false; }
   function hideStatus() { $("status").hidden = true; }
@@ -1551,7 +1689,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   const FAV_SHARE_MAX = 300;       // keeps a shared link under about 7,000 characters
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   let favs = loadFavs();           // newest first
-  let favsExpanded = false;
+  const STRIP_MAX = 20;            // the menu shows at most this many, the rest are on the favorites page
   let importCards = [];
 
   function loadFavs() {
@@ -1614,11 +1752,11 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     const n = favs.length;
     $("favCount").textContent = n ? "(" + n + ")" : "";
     $("favEmpty").hidden = n > 0;
-    $("favNote").hidden = n === 0;
     $("favActions").hidden = n === 0;
-    const grid = $("favGrid");
-    grid.textContent = "";
-    for (const c of favsExpanded ? favs : favs.slice(0, 12)) {
+    $("favAllBtn").hidden = n === 0;
+    const strip = $("favStrip");
+    strip.textContent = "";
+    for (const c of favs.slice(0, STRIP_MAX)) {
       const b = document.createElement("button");
       b.type = "button";
       b.setAttribute("aria-label", "Show " + c.name);
@@ -1628,13 +1766,104 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
       img.src = thumbOf(c);
       b.append(img);
       b.addEventListener("click", () => openCard(c));
-      grid.append(b);
+      strip.append(b);
     }
-    $("favMoreBtn").hidden = favsExpanded || n <= 12;
-    $("favMoreBtn").textContent = "Show all " + n;
+    if (n > STRIP_MAX) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "more";
+      more.textContent = "+" + (n - STRIP_MAX) + " more";
+      more.addEventListener("click", openGallery);
+      strip.append(more);
+    }
     $("deckLine").hidden = !deck;
     if (deck) $("deckText").textContent = deck.kind === "favs" ? "Shuffling your favorites." : "Shuffling " + deck.cards.length + " shared cards.";
     $("favShuffleBtn").hidden = !!deck && deck.kind === "favs";
+    renderGallery();
+  }
+
+  // ---------- All favorites: a page of their own ----------
+  let editing = false, lastRemoved = null;
+  function openGallery() {
+    editing = false;
+    lastRemoved = null;
+    $("galSearch").value = "";
+    $("gallery").hidden = false;
+    renderGallery();
+    $("galClose").focus({ preventScroll: true });
+  }
+  function closeGallery() {
+    $("gallery").hidden = true;
+    lastRemoved = null;
+    renderFavs();
+  }
+  function renderGallery() {
+    const gallery = $("gallery");
+    if (gallery.hidden) return;
+    const query = $("galSearch").value.trim();
+    const q = query.toLowerCase();
+    let list = favs.slice();
+    const sort = $("galSort").value;
+    if (sort === "oldest") list.reverse();
+    else if (sort === "name") list.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sort === "artist") list.sort((a, b) => (a.artist || "").localeCompare(b.artist || "") || a.name.localeCompare(b.name));
+    if (q) list = list.filter((c) => [c.name, c.artist, c.type, c.set].join(" ").toLowerCase().includes(q));
+
+    gallery.classList.toggle("editing", editing);
+    $("galCount").textContent = "(" + favs.length + ")";
+    $("galUndo").hidden = !lastRemoved;
+    $("galEdit").textContent = editing ? "Done" : "Edit";
+    $("galEdit").setAttribute("aria-pressed", String(editing));
+    $("galEdit").hidden = favs.length === 0;
+    $("galNone").hidden = list.length > 0;
+    $("galNone").textContent = favs.length ? "No favorites match “" + query + "”." : "No favorites yet. Double-tap a card to keep it.";
+    $("galShuffle").disabled = favs.length === 0;
+    $("galShare").disabled = favs.length === 0;
+
+    const grid = $("galGrid");
+    grid.textContent = "";
+    for (const c of list) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "gal-item";
+      b.setAttribute("aria-label", (editing ? "Remove " : "Show ") + c.name);
+      const img = document.createElement("img");
+      img.loading = "lazy";
+      img.alt = "";
+      img.src = thumbOf(c);
+      const name = document.createElement("span");
+      name.className = "n";
+      name.textContent = c.name;
+      const x = document.createElement("span");
+      x.className = "x";
+      x.setAttribute("aria-hidden", "true");
+      x.textContent = "×";
+      b.append(img, name, x);
+      b.addEventListener("click", () => {
+        if (editing) { removeFav(c.id); return; }
+        closeGallery();
+        openCard(c);
+      });
+      grid.append(b);
+    }
+  }
+  // Removing keeps the last card at hand, so one tap on Undo brings it back
+  function removeFav(id) {
+    const index = favs.findIndex((f) => f.id === id);
+    if (index < 0) return;
+    lastRemoved = { card: favs[index], index };
+    favs.splice(index, 1);
+    saveFavs();
+    renderGallery();
+    renderFavState(current());
+  }
+  function undoRemove() {
+    if (!lastRemoved) return;
+    favs.splice(Math.min(lastRemoved.index, favs.length), 0, lastRemoved.card);
+    lastRemoved = null;
+    saveFavs();
+    renderGallery();
+    renderFavState(current());
   }
   // Show one stored card right now, then carry on as before
   function openCard(stored) {
@@ -1694,17 +1923,27 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     } catch (e) { return ""; }
   }
 
-  $("favToggle").addEventListener("click", toggleFavorite);
-  $("favMoreBtn").addEventListener("click", () => { favsExpanded = true; renderFavs(); });
-  $("favShuffleBtn").addEventListener("click", () => dealFrom("favs"));
-  $("deckBack").addEventListener("click", dealEverything);
-  $("favShareBtn").addEventListener("click", () => {
+  function shareFavs() {
     const list = favs.slice(0, FAV_SHARE_MAX);
+    if (!list.length) return;
     const url = new URL(appUrl());
     url.searchParams.set("favs", list.map((c) => idToCode(c.id)).join("."));
     shareLink(url.toString(), "My Ponder favorites", list.length + " favorite Magic: The Gathering cards, shared from Ponder.");
     if (favs.length > FAV_SHARE_MAX) toast("The link holds your " + FAV_SHARE_MAX + " newest favorites.");
-  });
+  }
+
+  $("favToggle").addEventListener("click", toggleFavorite);
+  $("favShuffleBtn").addEventListener("click", () => dealFrom("favs"));
+  $("deckBack").addEventListener("click", dealEverything);
+  $("favShareBtn").addEventListener("click", shareFavs);
+  $("favAllBtn").addEventListener("click", openGallery);
+  $("galClose").addEventListener("click", closeGallery);
+  $("galEdit").addEventListener("click", () => { editing = !editing; renderGallery(); });
+  $("galUndo").addEventListener("click", undoRemove);
+  $("galSearch").addEventListener("input", renderGallery);
+  $("galSort").addEventListener("change", renderGallery);
+  $("galShuffle").addEventListener("click", () => { closeGallery(); dealFrom("favs"); });
+  $("galShare").addEventListener("click", shareFavs);
 
   // Someone opened a favorites link: load the cards, then let them choose
   async function importShared(codes) {
@@ -1850,6 +2089,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     document.body.dataset.view = filters.view;
     document.body.classList.toggle("no-ambient", !filters.ambient);
     document.documentElement.style.setProperty("--slide-ms", slideMs() + "ms");
+    syncDrift();
     syncViews();
     syncInstall();
     if (!readFlag("coached")) $("coach").hidden = false;

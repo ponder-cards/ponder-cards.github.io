@@ -12,9 +12,10 @@ Swipe through random *Magic: The Gathering* cards. One card at a time, nothing e
 - **Three views:** the full card, the art only, or the art with its flavor text (lore only, never rules text).
 - **Filters:** color, card type, rarity, era (1990s to 2020s), format, card language (11 languages), or any [Scryfall search](https://scryfall.com/docs/syntax).
 - **More art by this artist:** tap the artist's name under the art to see more of their work.
-- **Favorites without an account:** double-tap a card to keep it. Shuffle through your favorites, or share them
-  as a link that works as a backup and lets friends add or browse them.
-- **Slideshow:** cards change by themselves and the screen stays on. Made for a tablet or TV.
+- **Favorites without an account:** double-tap a card to keep it. Search, sort and tidy them on their own page,
+  shuffle through them, or share them as a link that works as a backup and lets friends add or browse them.
+- **Slideshow:** cards change by themselves with a card swipe or a crossfade, and the screen stays on.
+  Optionally as large as the screen allows, with nothing cropped. Made for a tablet or TV.
 - **Share:** send a link to Ponder or to the exact card you're looking at, or show a QR code.
 - **Installable:** add Ponder to your home screen and it opens full screen like an app.
 
