@@ -1,6 +1,6 @@
 // Ponder service worker: keeps the app itself available offline and makes it installable.
 // Card data and images always come live from Scryfall and are never cached here.
-const CACHE = "ponder-v1";
+const CACHE = "ponder-v2";
 const SHELL = [
   "./",
   "index.html",
@@ -29,15 +29,17 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
+  // Every page load (also shared links like ?card=…) is the same app, so it is stored once as index.html
+  const key = event.request.mode === "navigate" ? "index.html" : event.request;
   event.respondWith(
     fetch(event.request)
       .then((response) => {
         if (response.ok) {
           const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+          caches.open(CACHE).then((cache) => cache.put(key, copy));
         }
         return response;
       })
-      .catch(() => caches.match(event.request).then((hit) => hit || caches.match("index.html")))
+      .catch(() => caches.match(key).then((hit) => hit || caches.match("index.html")))
   );
 });

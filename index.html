@@ -14,6 +14,14 @@
 <meta property="og:title" content="Ponder">
 <meta property="og:description" content="Swipe through random Magic: The Gathering cards. One card at a time, nothing else on screen.">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://benjhuang.github.io/ponder/">
+<meta property="og:image" content="https://benjhuang.github.io/ponder/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Ponder: swipe through random Magic: The Gathering cards">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://benjhuang.github.io/ponder/og-image.png">
+<link rel="canonical" href="https://benjhuang.github.io/ponder/">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
@@ -147,6 +155,12 @@ body:not([data-view="card"]) .face .lore { display: block; }
   font-size: 11.5px; color: var(--ink-dim);
   text-shadow: 0 1px 8px rgba(0,0,0,.8);
 }
+/* The artist's name under the art is tappable: it deals more art by them */
+.credit .artist {
+  color: var(--ink);
+  text-decoration: underline dotted rgba(236,230,220,.5);
+  text-underline-offset: 3px;
+}
 
 /* Art only: the picture as large as possible, with just the artist line below */
 body[data-view="art"] .face { gap: 10px; }
@@ -247,6 +261,22 @@ body:not([data-view="card"]) .turn-hint { bottom: auto; top: 0; }
 }
 .coach.gone { opacity: 0; }
 
+/* ---------- Slideshow ---------- */
+.progress {
+  position: fixed; left: 0; bottom: 0; z-index: 4;
+  width: 100%; height: 2px;
+  background: var(--accent); opacity: .45;
+  transform-origin: left; transform: scaleX(0);
+  pointer-events: none;
+}
+@keyframes progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+/* In art-only view the picture drifts slowly closer while it is on screen */
+@keyframes drift { from { transform: scale(1); } to { transform: scale(1.06); } }
+body.slideshow[data-view="art"] .card:not(.under) .face .art { animation: drift var(--slide-ms, 10s) ease-out both; }
+body.slideshow.idle .menu-btn { opacity: 0; }
+body.slideshow.idle .progress { opacity: .22; }
+body.slideshow.idle, body.slideshow.idle .stage { cursor: none; }
+
 .toast {
   position: fixed; z-index: 30; left: 50%;
   top: calc(16px + env(safe-area-inset-top, 0px));
@@ -319,8 +349,14 @@ body:not([data-view="card"]) .turn-hint { bottom: auto; top: 0; }
 .rarity.common { background: #8e8a86; } .rarity.uncommon { background: #b9c6cf; }
 .rarity.rare { background: #d9b56a; } .rarity.mythic { background: #e2662f; }
 .rarity.special, .rarity.bonus { background: #9b6cc9; }
-.ext { color: var(--accent); text-decoration: none; font-weight: 500; font-size: 14px; justify-self: start; margin-top: 8px; }
+.ext {
+  color: var(--accent); text-decoration: none; font: 500 14px var(--font-ui);
+  background: none; border: 0; padding: 0; cursor: pointer; text-align: left;
+}
 .ext:hover { text-decoration: underline; }
+.ext:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card-links { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 8px; }
+.this-card .ghost { margin-top: 12px; }
 
 /* View picker with small preview pictograms */
 .views { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -365,6 +401,8 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
 
 .actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .actions > * { flex: 1 1 auto; }
+.actions select { width: auto; flex: 1 1 130px; min-height: 44px; }
+.chip .x { color: var(--ink-dim); font-size: 16px; line-height: 1; }
 .primary, .ghost {
   min-height: 44px; padding: 0 18px; border-radius: 12px;
   font: 600 15px var(--font-ui); cursor: pointer;
@@ -404,6 +442,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
 @media (prefers-reduced-motion: reduce) {
   .card-inner, .face, .sheet, .scrim, .ambient, .toast { transition-duration: .01s !important; }
   .card.empty::after { animation: none; }
+  body.slideshow .face .art { animation: none !important; }
 }
 </style>
 </head>
@@ -438,6 +477,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
 </button>
 
 <div class="coach" id="coach" hidden>← Swipe for the next card</div>
+<div class="progress" id="progress" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <div class="scrim" id="scrim"></div>
@@ -456,7 +496,11 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
         <dt>Number</dt><dd id="ciNum"></dd>
         <dt>Artist</dt><dd id="ciArtist"></dd>
       </dl>
-      <a class="ext" id="ciLink" href="#" target="_blank" rel="noopener">View on Scryfall ↗</a>
+      <div class="card-links">
+        <button type="button" class="ext" id="ciMore">More art by this artist →</button>
+        <a class="ext" id="ciLink" href="#" target="_blank" rel="noopener">View on Scryfall ↗</a>
+      </div>
+      <button type="button" class="ghost" id="shareCardBtn">Share this card</button>
     </div>
 
     <div>
@@ -480,6 +524,12 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
 
     <form class="filters" id="filters" autocomplete="off">
       <p class="label" style="margin:0">Which cards are dealt</p>
+
+      <div id="artistFilter" hidden>
+        <p class="label">Artist</p>
+        <button type="button" class="chip" id="artistChip" aria-pressed="true"><span id="artistChipName"></span><span class="x" aria-hidden="true">×</span></button>
+        <p class="hint">Tap to show all artists again.</p>
+      </div>
 
       <div>
         <p class="label">Color</p>
@@ -515,6 +565,16 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
           <button type="button" class="chip" data-v="uncommon" aria-pressed="false"><span class="rarity uncommon"></span>Uncommon</button>
           <button type="button" class="chip" data-v="rare" aria-pressed="false"><span class="rarity rare"></span>Rare</button>
           <button type="button" class="chip" data-v="mythic" aria-pressed="false"><span class="rarity mythic"></span>Mythic</button>
+        </div>
+      </div>
+
+      <div>
+        <p class="label">Printed in</p>
+        <div class="chips" data-group="eras">
+          <button type="button" class="chip" data-v="90s" aria-pressed="false">1990s</button>
+          <button type="button" class="chip" data-v="00s" aria-pressed="false">2000s</button>
+          <button type="button" class="chip" data-v="10s" aria-pressed="false">2010s</button>
+          <button type="button" class="chip" data-v="20s" aria-pressed="false">2020s</button>
         </div>
       </div>
 
@@ -570,6 +630,21 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     </form>
 
     <div>
+      <p class="label">Slideshow</p>
+      <div class="actions">
+        <select id="slideSec" aria-label="Time per card">
+          <option value="5">5 seconds per card</option>
+          <option value="10">10 seconds per card</option>
+          <option value="20">20 seconds per card</option>
+          <option value="30">30 seconds per card</option>
+          <option value="60">1 minute per card</option>
+        </select>
+        <button type="button" class="primary" id="slideBtn">Start slideshow</button>
+      </div>
+      <p class="hint">Cards change by themselves and the screen stays on. Swiping still works. Try it with “Art only” on a tablet or TV.</p>
+    </div>
+
+    <div>
       <p class="label">Share &amp; install</p>
       <div class="actions">
         <button type="button" class="ghost" id="shareBtn">Share link</button>
@@ -582,7 +657,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     </div>
 
     <div class="fine">
-      <p class="keys">On a computer: <kbd>→</kbd> or <kbd>Space</kbd> next, <kbd>←</kbd> back, <kbd>F</kbd> flip, <kbd>V</kbd> change view, <kbd>M</kbd> menu.</p>
+      <p class="keys">On a computer: <kbd>→</kbd> or <kbd>Space</kbd> next, <kbd>←</kbd> back, <kbd>F</kbd> flip, <kbd>V</kbd> change view, <kbd>S</kbd> slideshow, <kbd>M</kbd> menu.</p>
       <p>Card data and images from <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>. Ponder stores your settings in this browser only. No accounts, no cookies, no tracking.</p>
       <p>Ponder is unofficial fan content, permitted under the Wizards of the Coast Fan Content Policy. It is not approved or endorsed by Wizards. Card images, artwork and text are property of Wizards of the Coast. © Wizards of the Coast LLC.</p>
     </div>
@@ -605,7 +680,8 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   // ---------- Settings ----------
   const API = "https://api.scryfall.com/cards/random";
   const QUEUE_TARGET = 4;          // this many cards wait fully loaded
-  const MIN_GAP_MS = 120;          // gap between API requests (Scryfall asks for 50–100 ms)
+  const MIN_GAP_MS = 550;          // Scryfall allows 2 requests per second on /cards/random
+  const RATE_PAUSE_MS = 35000;     // after an HTTP 429, Scryfall blocks for 30 seconds
   const HISTORY_MAX = 60;
   // Always excluded: tokens, emblems, Un-sets, Art Series cards, digital-only cards
   const BASE_QUERY = "game:paper -t:token -t:emblem -is:funny -st:memorabilia";
@@ -613,7 +689,9 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   const VIEWS = ["card", "art", "lore"];
   const LANGS = ["en", "de", "es", "fr", "it", "pt", "ru", "ja", "ko", "zhs", "zht"];
 
-  const DEFAULT_FILTERS = { colors: [], types: [], rarities: [], format: "", lang: "en", custom: "", noBasics: true, ambient: true, view: "card" };
+  const ERAS = { "90s": "year<=1999", "00s": "(year>=2000 year<=2009)", "10s": "(year>=2010 year<=2019)", "20s": "year>=2020" };
+
+  const DEFAULT_FILTERS = { colors: [], types: [], rarities: [], eras: [], artist: "", format: "", lang: "en", custom: "", noBasics: true, ambient: true, view: "card", slideSec: 10 };
 
   // ---------- State ----------
   let filters = loadFilters();
@@ -623,6 +701,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   let gen = 0;        // bumps on every new search; discards stale loads
   let filling = false;
   let lastRequest = 0;
+  let pausedUntil = 0;
   let waitingForNext = false;
   let animating = false;
 
@@ -665,6 +744,8 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     if (f.colors.length) parts.push(or(f.colors, (c) => "c:" + c));
     if (f.types.length) parts.push(or(f.types, (t) => "t:" + t));
     if (f.rarities.length) parts.push(or(f.rarities, (r) => "r:" + r));
+    if (f.eras.length) parts.push(or(f.eras, (e) => ERAS[e]));
+    if (f.artist) parts.push('a:"' + f.artist.replace(/"/g, "") + '"');
     if (f.format) parts.push("f:" + f.format);
     if (f.lang && f.lang !== "en") parts.push("lang:" + f.lang);
     if (f.noBasics) parts.push("-t:basic");
@@ -684,24 +765,32 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     return "Can't reach Scryfall. Is an ad blocker or network filter blocking api.scryfall.com?";
   }
 
-  async function fetchRandom(query) {
-    const wait = lastRequest + MIN_GAP_MS - Date.now();
-    if (wait > 0) await sleep(wait);
+  // Every API call goes through here, so Ponder never exceeds Scryfall's rate limits
+  async function scryfall(url) {
+    let wait = Math.max(lastRequest + MIN_GAP_MS, pausedUntil) - Date.now();
+    while (wait > 0) {
+      await sleep(wait);
+      wait = Math.max(lastRequest + MIN_GAP_MS, pausedUntil) - Date.now();
+    }
     lastRequest = Date.now();
     let res;
     try {
-      res = await fetch(API + "?q=" + encodeURIComponent(query), { headers: { Accept: "application/json" } });
+      res = await fetch(url, { headers: { Accept: "application/json" } });
     } catch (e) {
       throw { kind: "network", message: offlineReason() };
     }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       if (res.status === 404) throw { kind: "empty", message: "No cards match these filters. Try loosening them a little." };
-      if (res.status === 429) throw { kind: "rate", message: "Too many requests. Ponder waits a moment, then continues." };
+      if (res.status === 429) {
+        pausedUntil = Date.now() + RATE_PAUSE_MS;
+        throw { kind: "rate", message: "Scryfall asked Ponder to slow down. More cards in about half a minute." };
+      }
       throw { kind: "query", message: (data.warnings && data.warnings[0]) || data.details || "Scryfall didn't accept this search." };
     }
     return data;
   }
+  const fetchRandom = (query) => scryfall(API + "?q=" + encodeURIComponent(query));
 
   // Scryfall card -> what Ponder needs. Every side (face) has a card image, an art crop and flavor text.
   function normalize(c) {
@@ -739,7 +828,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
       ready: {},
       name: faces.map((f) => f.name).join(" // ") || c.name,
       type: typeFaces.map((f) => f.printed_type_line || f.type_line || "").filter(Boolean).join(" // ") || c.type_line || "",
-      set: c.set_name + " (" + c.set.toUpperCase() + ")",
+      set: c.set_name + " (" + c.set.toUpperCase() + ")" + (c.released_at ? " · " + c.released_at.slice(0, 4) : ""),
       number: c.collector_number + (c.lang && c.lang !== "en" ? " · " + c.lang.toUpperCase() : ""),
       rarity: c.rarity,
       artist: [...new Set(faces.map((f) => f.artist).filter(Boolean))].join(", ") || "unknown",
@@ -813,7 +902,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
 
   function handleError(err) {
     const msg = (err && err.message) || "Something went wrong.";
-    if (err && err.kind === "rate") { setTimeout(fill, 1500); toast(msg); return; }
+    if (err && err.kind === "rate") { setTimeout(fill, RATE_PAUSE_MS + 200); toast(msg); return; }
     if (err && err.kind === "network") { toast(msg); setTimeout(fill, 4000); return; }
     // No results or a broken search: show it in the menu
     showStatus(msg);
@@ -868,7 +957,15 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
       img.alt = f.name;
       fe.querySelector(".lore-name").textContent = f.name;
       renderFlavor(fe.querySelector(".lore-text"), f.flavor);
-      fe.querySelector(".credit").textContent = (f.artist ? "Illustrated by " + f.artist + " · " : "") + "© Wizards of the Coast";
+      const credit = fe.querySelector(".credit");
+      credit.textContent = "";
+      if (f.artist) {
+        const name = document.createElement("span");
+        name.className = "artist";
+        name.textContent = f.artist;
+        credit.append("Illustrated by ", name, " · ");
+      }
+      credit.append("© Wizards of the Coast");
     });
     hint.hidden = !turnAllowed(card);
   }
@@ -905,6 +1002,52 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     $("ciNum").append(dot, document.createTextNode(card.number));
     $("ciArtist").textContent = card.artist;
     $("ciLink").href = card.url;
+    const artist = firstArtist(card.artist);
+    $("ciMore").hidden = !artist || artist === filters.artist;
+    $("ciMore").textContent = "More art by " + artist + " →";
+  }
+
+  // ---------- More art by this artist ----------
+  // "Artist A & Artist B" -> "Artist A"; Scryfall finds each artist on their own
+  const firstArtist = (name) => (name && name !== "unknown" ? name.split(/\s+&\s+|,\s*/)[0].trim() : "");
+
+  function moreByArtist(name) {
+    const artist = firstArtist(name);
+    if (!artist) return;
+    if (artist === filters.artist) { toast("Already showing art by " + artist); return; }
+    // An artist search ignores the other card filters; language and view stay as they are
+    filters = Object.assign({}, filters, { artist, colors: [], types: [], rarities: [], eras: [], format: "", custom: "" });
+    saveState();
+    if (sheet.classList.contains("open")) closeSheet();
+    toast("More art by " + artist);
+    waitingForNext = true;
+    restartQueue();
+  }
+  function clearArtist() {
+    filters.artist = "";
+    saveState();
+    syncForm();
+    renderInfo(current());
+    toast("Showing all artists again");
+    waitingForNext = true;
+    restartQueue();
+  }
+  $("ciMore").addEventListener("click", () => { const c = current(); if (c) moreByArtist(c.artist); });
+  $("artistChip").addEventListener("click", clearArtist);
+
+  // Was the tap on the artist's name under the art?
+  function artistAt(x, y) {
+    if (filters.view === "card") return "";
+    const card = current();
+    if (!card) return "";
+    const side = topEl.dataset.turn === "flipped" ? 1 : 0;
+    const face = topEl.querySelectorAll(".face")[side];
+    const name = face && face.querySelector(".credit .artist");
+    if (!name || !card.faces[side]) return "";
+    const r = name.getBoundingClientRect();
+    const pad = 12; // a finger is bigger than the text
+    const hit = x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad;
+    return hit ? card.faces[side].artist : "";
   }
 
   // ---------- View ----------
@@ -1008,6 +1151,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
       renderInfo(card);
       animating = false;
       dismissCoach();
+      if (slideshowOn()) scheduleSlide(); // a manual swipe restarts the countdown too
     }, dur + 20);
   }
 
@@ -1048,7 +1192,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     if (animating || sheet.classList.contains("open")) return;
     if (e.button !== undefined && e.button !== 0) return;
     drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), dx: 0, dy: 0, dir: 0, moved: false };
-    stage.setPointerCapture(e.pointerId);
+    try { stage.setPointerCapture(e.pointerId); } catch (err) {}
   });
   stage.addEventListener("pointermove", (e) => {
     if (!drag || e.pointerId !== drag.id) return;
@@ -1077,7 +1221,10 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     const d = drag; drag = null;
     stage.classList.remove("dragging");
     if (!d.moved) {
-      if (e.type === "pointerup" && performance.now() - d.t0 < 450 && pos >= 0) turnCard();
+      if (e.type === "pointerup" && performance.now() - d.t0 < 450 && pos >= 0) {
+        const artist = artistAt(e.clientX, e.clientY);
+        if (artist) moreByArtist(artist); else turnCard();
+      }
       return;
     }
     const dt = Math.max(1, performance.now() - d.t0);
@@ -1101,7 +1248,9 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     if (!$("qr").hidden) { if (e.key === "Escape") closeQr(); return; }
     const open = sheet.classList.contains("open");
     if (e.key === "Escape" && open) { closeSheet(); return; }
+    if (e.key === "Escape" && slideshowOn()) { stopSlideshow(); return; }
     if (e.key === "m" || e.key === "M") { open ? closeSheet() : openSheet(); return; }
+    if (e.key === "s" || e.key === "S") { slideshowOn() ? stopSlideshow() : startSlideshow(); return; }
     if (e.key === "v" || e.key === "V") { setView(VIEWS[(VIEWS.indexOf(filters.view) + 1) % VIEWS.length]); return; }
     if (open) return;
     if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); next(); }
@@ -1117,6 +1266,8 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     sheet.inert = false;
     menuBtn.setAttribute("aria-expanded", "true");
     $("thisCard").hidden = !current();
+    renderInfo(current());
+    scheduleSlide(); // pauses the slideshow while the menu is open
     setTimeout(() => $("closeBtn").focus({ preventScroll: true }), 50);
   }
   function closeSheet() {
@@ -1124,6 +1275,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     sheet.inert = true;
     menuBtn.setAttribute("aria-expanded", "false");
     menuBtn.focus({ preventScroll: true });
+    scheduleSlide();
   }
   menuBtn.addEventListener("click", openSheet);
   $("closeBtn").addEventListener("click", closeSheet);
@@ -1164,10 +1316,14 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     $("custom").value = filters.custom;
     $("noBasics").checked = filters.noBasics;
     $("ambientOn").checked = filters.ambient;
+    $("slideSec").value = String(filters.slideSec);
+    $("artistFilter").hidden = !filters.artist;
+    $("artistChipName").textContent = filters.artist;
     syncViews();
+    syncSlideshow();
   }
   function readForm() {
-    const f = { view: filters.view, ambient: filters.ambient };
+    const f = { view: filters.view, ambient: filters.ambient, slideSec: filters.slideSec, artist: $("artistFilter").hidden ? "" : filters.artist };
     document.querySelectorAll(".chips[data-group]").forEach((g) => {
       f[g.dataset.group] = [...g.querySelectorAll('.chip[aria-pressed="true"]')].map((b) => b.dataset.v);
     });
@@ -1178,7 +1334,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     return f;
   }
 
-  document.querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll(".chips[data-group] .chip").forEach((b) => b.addEventListener("click", () => {
     b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true"));
   }));
   $("ambientOn").addEventListener("change", (e) => {
@@ -1202,9 +1358,79 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   // Only resets the form; it takes effect with "Apply filters"
   $("resetBtn").addEventListener("click", () => {
     const saved = filters;
-    filters = Object.assign({}, DEFAULT_FILTERS, { ambient: saved.ambient, view: saved.view });
+    filters = Object.assign({}, DEFAULT_FILTERS, { ambient: saved.ambient, view: saved.view, slideSec: saved.slideSec });
     syncForm();
     filters = saved;
+  });
+
+  // ---------- Slideshow ----------
+  let slideTimer = null, idleTimer = null, wakeLock = null;
+  const slideshowOn = () => document.body.classList.contains("slideshow");
+  const slideMs = () => (Number(filters.slideSec) || 10) * 1000;
+
+  function scheduleSlide() {
+    clearTimeout(slideTimer);
+    const bar = $("progress");
+    if (!slideshowOn() || sheet.classList.contains("open")) { bar.hidden = true; return; }
+    const ms = slideMs();
+    bar.hidden = false;
+    bar.style.animation = "none";
+    void bar.offsetWidth;
+    bar.style.animation = `progress ${ms}ms linear forwards`;
+    slideTimer = setTimeout(() => {
+      if (drag) { scheduleSlide(); return; } // someone is holding the card; try again later
+      next();
+      if (!animating) scheduleSlide();     // otherwise the swipe animation restarts the timer
+    }, ms);
+  }
+  async function keepScreenOn() {
+    try { if ("wakeLock" in navigator && document.visibilityState === "visible") wakeLock = await navigator.wakeLock.request("screen"); }
+    catch (e) { wakeLock = null; }
+  }
+  function startSlideshow() {
+    if (slideshowOn()) return;
+    document.body.classList.add("slideshow");
+    document.documentElement.style.setProperty("--slide-ms", slideMs() + "ms");
+    // Full screen on computers; phones show the app edge to edge anyway
+    if (!matchMedia("(pointer: coarse)").matches && document.documentElement.requestFullscreen && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+    keepScreenOn();
+    if (sheet.classList.contains("open")) closeSheet();
+    syncSlideshow();
+    scheduleSlide();
+    noteActivity();
+    toast("Slideshow on. Open the menu to stop it.");
+  }
+  function stopSlideshow() {
+    if (!slideshowOn()) return;
+    document.body.classList.remove("slideshow", "idle");
+    clearTimeout(slideTimer);
+    $("progress").hidden = true;
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    syncSlideshow();
+    toast("Slideshow off");
+  }
+  function syncSlideshow() {
+    const on = slideshowOn();
+    $("slideBtn").textContent = on ? "Stop slideshow" : "Start slideshow";
+    $("slideBtn").className = on ? "ghost" : "primary";
+  }
+  // During a slideshow the menu button and the mouse pointer fade out until someone moves
+  function noteActivity() {
+    document.body.classList.remove("idle");
+    clearTimeout(idleTimer);
+    if (slideshowOn()) idleTimer = setTimeout(() => document.body.classList.add("idle"), 2500);
+  }
+  ["pointermove", "pointerdown", "keydown"].forEach((t) => window.addEventListener(t, noteActivity, { passive: true }));
+  document.addEventListener("visibilitychange", () => { if (slideshowOn()) keepScreenOn(); });
+
+  $("slideBtn").addEventListener("click", () => (slideshowOn() ? stopSlideshow() : startSlideshow()));
+  $("slideSec").addEventListener("change", (e) => {
+    filters.slideSec = Number(e.target.value) || 10;
+    document.documentElement.style.setProperty("--slide-ms", slideMs() + "ms");
+    saveState();
   });
 
   function showStatus(msg) { const s = $("status"); s.textContent = msg; s.hidden = false; }
@@ -1222,14 +1448,28 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
   // ---------- Share & install ----------
   const appUrl = () => location.origin + location.pathname;
 
-  $("shareBtn").addEventListener("click", async () => {
-    const url = appUrl();
+  async function shareLink(url, title, text) {
     if (navigator.share) {
-      try { await navigator.share({ title: "Ponder", text: "Swipe through random Magic: The Gathering cards.", url }); } catch (e) {}
+      try { await navigator.share({ title, text, url }); } catch (e) {}
       return;
     }
     try { await navigator.clipboard.writeText(url); toast("Link copied"); }
     catch (e) { toast(url); }
+  }
+  $("shareBtn").addEventListener("click", () => shareLink(appUrl(), "Ponder", "Swipe through random Magic: The Gathering cards."));
+
+  // A card link opens Ponder with exactly this card first, in the view it was shared from
+  function cardUrl(card) {
+    const url = new URL(appUrl());
+    url.searchParams.set("card", card.id);
+    if (filters.view !== "card") url.searchParams.set("view", filters.view);
+    return url.toString();
+  }
+  $("shareCardBtn").addEventListener("click", () => {
+    const card = current();
+    if (!card) return;
+    const by = firstArtist(card.artist) ? ", illustrated by " + firstArtist(card.artist) : "";
+    shareLink(cardUrl(card), card.name, card.name + by + ". Found on Ponder.");
   });
 
   function loadQrLibrary() {
@@ -1290,13 +1530,37 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     saveState({ coached: true });
   }
 
-  document.body.dataset.view = filters.view;
-  document.body.classList.toggle("no-ambient", !filters.ambient);
-  syncViews();
-  syncInstall();
-  if (!readFlag("coached")) $("coach").hidden = false;
-  waitingForNext = true;
-  fill();
+  async function start() {
+    // Opened from a shared card link?
+    const params = new URLSearchParams(location.search);
+    const sharedId = params.get("card") || "";
+    const sharedView = params.get("view");
+    // window.history: the plain name "history" is Ponder's own list of shown cards
+    if (params.has("card") || params.has("view")) window.history.replaceState(null, "", location.pathname);
+    if (VIEWS.includes(sharedView)) { filters.view = sharedView; saveState(); }
+
+    document.body.dataset.view = filters.view;
+    document.body.classList.toggle("no-ambient", !filters.ambient);
+    document.documentElement.style.setProperty("--slide-ms", slideMs() + "ms");
+    syncViews();
+    syncInstall();
+    if (!readFlag("coached")) $("coach").hidden = false;
+
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sharedId)) {
+      try {
+        const card = normalize(await scryfall("https://api.scryfall.com/cards/" + sharedId));
+        if (!card) throw new Error("no image");
+        await preload(card, imageKind());
+        queue.push(card);
+        next();
+      } catch (e) {
+        toast("The shared card couldn't be loaded. Here's a random one.");
+      }
+    }
+    if (pos < 0) waitingForNext = true;
+    fill();
+  }
+  start();
 })();
 </script>
 </body>
