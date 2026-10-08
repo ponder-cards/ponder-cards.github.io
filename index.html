@@ -1,0 +1,1303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ponder</title>
+<meta name="description" content="Swipe through random Magic: The Gathering cards. One card at a time, nothing else on screen.">
+<meta name="theme-color" content="#0b0a0e">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ponder">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta property="og:title" content="Ponder">
+<meta property="og:description" content="Swipe through random Magic: The Gathering cards. One card at a time, nothing else on screen.">
+<meta property="og:type" content="website">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://api.scryfall.com">
+<link rel="preconnect" href="https://cards.scryfall.io">
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+/* Layout: one card (or its art) centered on a dark play table; everything else lives in a sheet you have to pull up. */
+:root {
+  --table: #0b0a0e;          /* the play table behind the card */
+  --sheet: rgba(22, 20, 27, .94);
+  --line: rgba(236, 230, 220, .12);
+  --ink: #ece6dc;
+  --ink-dim: #a39c92;
+  --accent: #d9b56a;         /* brass, like the frames of old cards */
+  --paper: #f4efe6;
+  --danger: #e58a76;
+
+  --mana-w: #f6f1d3; --mana-u: #2f7fc1; --mana-b: #7d6f68;
+  --mana-r: #d8453a; --mana-g: #2f8a55; --mana-c: #bdb5b0;
+
+  --font-display: "Spectral", "Iowan Old Style", Georgia, serif;
+  --font-ui: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  --card-ratio: 0.7159;      /* 63 × 88 mm */
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --safe-y: calc(env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
+  --safe-x: calc(env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px));
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--table);
+  color: var(--ink);
+  font: 15px/1.45 var(--font-ui);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+[hidden] { display: none !important; }
+
+/* ---------- Background: the current image, heavily blurred ---------- */
+.ambient {
+  position: fixed; inset: -10%;
+  background-size: cover; background-position: center;
+  filter: blur(48px) saturate(1.3) brightness(.32);
+  opacity: 0; transition: opacity .6s ease;
+  pointer-events: none;
+}
+.ambient.on { opacity: 1; }
+body.no-ambient .ambient { display: none; }
+
+/* ---------- Stage ---------- */
+.stage {
+  position: fixed; inset: 0;
+  display: grid; place-items: center;
+  touch-action: none;
+  user-select: none; -webkit-user-select: none;
+  cursor: grab;
+}
+.stage.dragging { cursor: grabbing; }
+
+/* One card layer. Two of them swap roles after every swipe. */
+.card {
+  grid-area: 1 / 1;
+  position: relative; z-index: 2;
+  perspective: 1600px;
+  will-change: transform;
+}
+.card.under { z-index: 1; pointer-events: none; }
+.card-inner {
+  position: relative; width: 100%; height: 100%;
+  transform-style: preserve-3d;
+  transition: transform .55s var(--ease-out);
+}
+.face {
+  position: absolute; inset: 0; margin: 0;
+  backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  pointer-events: none;
+}
+.face img { display: block; -webkit-user-drag: none; -webkit-touch-callout: none; }
+.face .full, .face .art, .face .lore { display: none; }
+
+/* ---------- View: full card ---------- */
+body[data-view="card"] .card {
+  height: min(calc(100dvh - 48px - var(--safe-y)), calc((100vw - 32px - var(--safe-x)) / var(--card-ratio)));
+  aspect-ratio: 63 / 88;
+  max-width: 100%;
+}
+body[data-view="card"] .face .full {
+  display: block;
+  width: 100%; height: 100%;
+  border-radius: 4.76% / 3.41%;
+  box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.4);
+  background: #15131a;
+}
+body[data-view="card"] .face.back { transform: rotateY(180deg); }
+body[data-view="card"] .card[data-turn="flipped"] .card-inner { transform: rotateY(180deg); }
+body[data-view="card"] .card[data-turn="rotated180"] .card-inner { transform: rotate(180deg); }
+body[data-view="card"] .card[data-turn="rotated90"] .card-inner { transform: rotate(90deg) scale(var(--fit, 1)); }
+
+/* ---------- Views built around the art ---------- */
+body:not([data-view="card"]) .card {
+  width: calc(100vw - 24px - var(--safe-x));
+  height: calc(100dvh - 40px - var(--safe-y));
+}
+body:not([data-view="card"]) .card-inner { transform: none; }
+body:not([data-view="card"]) .face {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  backface-visibility: visible; -webkit-backface-visibility: visible;
+  transition: opacity .4s ease;
+}
+body:not([data-view="card"]) .face.back { opacity: 0; }
+body:not([data-view="card"]) .card[data-turn="flipped"] .face.front { opacity: 0; }
+body:not([data-view="card"]) .card[data-turn="flipped"] .face.back { opacity: 1; }
+body:not([data-view="card"]) .face .art {
+  display: block;
+  width: auto; height: auto;
+  max-width: 100%; min-height: 0;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.5);
+}
+body:not([data-view="card"]) .face .lore { display: block; }
+.lore-name, .lore-text, .credit { margin: 0; }
+.credit {
+  font-size: 11.5px; color: var(--ink-dim);
+  text-shadow: 0 1px 8px rgba(0,0,0,.8);
+}
+
+/* Art only: the picture as large as possible, with just the artist line below */
+body[data-view="art"] .face { gap: 10px; }
+body[data-view="art"] .face .art { max-height: calc(100% - 30px); }
+body[data-view="art"] .lore-name, body[data-view="art"] .lore-text { display: none; }
+body[data-view="art"] .lore { text-align: center; }
+
+/* Art + lore: the text sits on the fading lower edge of the art */
+body[data-view="lore"] .face .art {
+  max-height: 64%;
+  border-radius: 6px 6px 0 0;
+  box-shadow: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
+          mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
+}
+body[data-view="lore"] .face .lore {
+  position: relative;
+  width: min(100%, 34em);
+  margin-top: -4.2em;
+  padding: 0 6px;
+  display: grid; gap: 10px;
+  text-shadow: 0 1px 12px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.6);
+}
+.lore-name {
+  font: 600 12px/1.3 var(--font-ui);
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--accent);
+}
+.lore-text {
+  font: italic 400 clamp(17px, 1.6vh + 8px, 23px)/1.42 var(--font-display);
+  color: var(--ink);
+  display: grid; gap: .45em;
+  text-wrap: pretty;
+}
+.lore-text p { margin: 0; }
+.lore-text .attr { text-align: right; font-size: .82em; color: var(--ink-dim); }
+@media (max-height: 520px) {
+  body[data-view="lore"] .face .art { max-height: 56%; }
+  .lore-text { font-size: 15px; }
+}
+
+/* ---------- Placeholder while nothing has loaded yet ---------- */
+.card.empty .face { visibility: hidden; }
+.card.empty::after {
+  content: ""; position: absolute; inset: 0;
+  border-radius: 4.76% / 3.41%;
+  border: 1.5px solid var(--line);
+  background: linear-gradient(110deg, transparent 30%, rgba(236,230,220,.05) 50%, transparent 70%) 0 0 / 250% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+body:not([data-view="card"]) .card.empty::after {
+  inset: auto 0; top: 50%;
+  height: min(73vw, 60%);
+  transform: translateY(-50%);
+  border-radius: 6px;
+}
+@keyframes shimmer { to { background-position: -250% 0; } }
+
+/* Small sign that this card has another side.
+   On the card it sits centered on the bottom edge, clear of power/toughness and the artist and copyright lines. */
+.turn-hint {
+  position: absolute; left: 50%; bottom: -15px; margin-left: -15px;
+  width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: rgba(11,10,14,.62); color: var(--ink);
+  border: 1px solid rgba(236,230,220,.22);
+  backdrop-filter: blur(4px);
+  font-size: 15px; line-height: 1;
+  pointer-events: none;
+  transition: opacity .3s;
+}
+body:not([data-view="card"]) .turn-hint { bottom: auto; top: 0; }
+.card[data-turn]:not([data-turn=""]) .turn-hint { opacity: 0; }
+
+/* ---------- Controls (deliberately almost invisible) ---------- */
+.menu-btn {
+  position: fixed; z-index: 5;
+  top: calc(8px + env(safe-area-inset-top, 0px)); right: calc(8px + env(safe-area-inset-right, 0px));
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 0; background: transparent; color: var(--ink);
+  opacity: .38; cursor: pointer;
+  display: grid; place-items: center;
+  transition: opacity .2s;
+}
+.menu-btn:hover, .menu-btn:focus-visible { opacity: .9; }
+.menu-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.menu-btn svg { width: 22px; height: 22px; filter: drop-shadow(0 1px 3px rgba(0,0,0,.6)); }
+
+.coach {
+  position: fixed; z-index: 4; left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  padding: 7px 14px; border-radius: 999px;
+  background: rgba(11,10,14,.7); backdrop-filter: blur(6px);
+  color: var(--ink); font-size: 13px; white-space: nowrap;
+  pointer-events: none;
+  transition: opacity .5s;
+}
+.coach.gone { opacity: 0; }
+
+.toast {
+  position: fixed; z-index: 30; left: 50%;
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  transform: translate(-50%, -12px);
+  max-width: calc(100vw - 32px);
+  padding: 9px 16px; border-radius: 10px;
+  background: rgba(22,20,27,.95); border: 1px solid var(--line);
+  font-size: 14px; text-align: center; overflow-wrap: anywhere;
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s, transform .25s var(--ease-out);
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- Sheet with card info, view, filters, sharing ---------- */
+.scrim {
+  position: fixed; inset: 0; z-index: 10;
+  background: rgba(0,0,0,.45);
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s;
+}
+.scrim.open { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed; z-index: 11;
+  left: 50%; bottom: 0;
+  width: min(560px, 100vw);
+  max-height: min(86dvh, 860px);
+  transform: translate(-50%, 102%);
+  transition: transform .32s var(--ease-out);
+  background: var(--sheet);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--line); border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+  display: flex; flex-direction: column;
+}
+.sheet.open { transform: translate(-50%, 0); }
+.sheet-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px 6px 20px;
+}
+.grabber { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 36px; height: 4px; border-radius: 2px; background: rgba(236,230,220,.2); }
+.sheet-body {
+  overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+  padding: 4px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  display: grid; gap: 24px;
+}
+.close-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 0; background: rgba(236,230,220,.08); color: var(--ink);
+  font-size: 20px; line-height: 1; cursor: pointer;
+}
+.close-btn:focus-visible, .chip:focus-visible, .primary:focus-visible, .ghost:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
+.label {
+  font-size: 11px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--ink-dim); margin: 0 0 8px;
+}
+
+/* This card */
+.this-card { display: grid; gap: 4px; }
+.this-card h2 {
+  font: 600 22px/1.2 var(--font-display); margin: 0; text-wrap: balance;
+}
+.this-card .type { font: italic 400 15px/1.35 var(--font-display); color: var(--ink); margin: 0; }
+.this-card dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 8px 0 0; font-size: 14px; }
+.this-card dt { color: var(--ink-dim); }
+.this-card dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.rarity { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.rarity.common { background: #8e8a86; } .rarity.uncommon { background: #b9c6cf; }
+.rarity.rare { background: #d9b56a; } .rarity.mythic { background: #e2662f; }
+.rarity.special, .rarity.bonus { background: #9b6cc9; }
+.ext { color: var(--accent); text-decoration: none; font-weight: 500; font-size: 14px; justify-self: start; margin-top: 8px; }
+.ext:hover { text-decoration: underline; }
+
+/* View picker with small preview pictograms */
+.views { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.views button {
+  display: grid; justify-items: center; gap: 7px;
+  padding: 12px 6px 10px; border-radius: 12px;
+  border: 1px solid var(--line); background: transparent; color: var(--ink-dim);
+  font: 500 13px/1.2 var(--font-ui); cursor: pointer;
+}
+.views button[aria-pressed="true"] { background: rgba(217,181,106,.16); border-color: var(--accent); color: var(--ink); }
+.views button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.views svg { width: 34px; height: 34px; }
+
+/* Filters */
+.filters { display: grid; gap: 18px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 36px; padding: 6px 13px;
+  border-radius: 999px; border: 1px solid var(--line);
+  background: transparent; color: var(--ink);
+  font: 500 14px var(--font-ui); cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: rgba(217,181,106,.16); border-color: var(--accent); }
+.pip { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.35); }
+.pip.multi { background: conic-gradient(var(--mana-w) 0 20%, var(--mana-u) 0 40%, var(--mana-b) 0 60%, var(--mana-r) 0 80%, var(--mana-g) 0); }
+
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 380px) { .row2 { grid-template-columns: 1fr; } }
+select, input[type="text"] {
+  width: 100%; min-height: 40px;
+  padding: 8px 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: rgba(0,0,0,.25); color: var(--ink);
+  font: 15px var(--font-ui);
+}
+input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
+.toggle { display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; }
+.toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.hint { font-size: 12.5px; color: var(--ink-dim); margin: 6px 0 0; }
+.hint code { font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
+.status { font-size: 14px; color: var(--danger); margin: 0; }
+
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.actions > * { flex: 1 1 auto; }
+.primary, .ghost {
+  min-height: 44px; padding: 0 18px; border-radius: 12px;
+  font: 600 15px var(--font-ui); cursor: pointer;
+}
+.primary { border: 0; background: var(--accent); color: #1a1408; }
+.ghost { border: 1px solid var(--line); background: transparent; color: var(--ink); }
+.install-btn { width: 100%; margin-top: 10px; }
+
+.fine {
+  border-top: 1px solid var(--line); padding-top: 14px;
+  font-size: 12px; color: var(--ink-dim); display: grid; gap: 6px;
+}
+.fine p { margin: 0; }
+.fine a { color: var(--ink); }
+.keys kbd { font-family: var(--font-mono); font-size: 11px; padding: 1px 5px; border: 1px solid var(--line); border-radius: 4px; }
+
+/* ---------- QR code for passing Ponder on ---------- */
+.qr {
+  position: fixed; inset: 0; z-index: 20;
+  display: grid; place-items: center;
+  padding: 16px;
+  background: rgba(5,4,8,.78);
+  backdrop-filter: blur(6px);
+}
+.qr-card {
+  width: min(320px, 100%);
+  display: grid; justify-items: center; gap: 10px;
+  padding: 22px 22px 18px; border-radius: 18px;
+  background: var(--paper); color: #17141c;
+  text-align: center;
+}
+.qr-card img { width: 100%; height: auto; image-rendering: pixelated; }
+.qr-card h2 { font: 600 22px/1.2 var(--font-display); margin: 0; }
+.qr-url { font: 12.5px/1.4 var(--font-mono); margin: 0; overflow-wrap: anywhere; color: #4a4450; }
+.qr-card .ghost { border-color: rgba(23,20,28,.2); color: #17141c; width: 100%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card-inner, .face, .sheet, .scrim, .ambient, .toast { transition-duration: .01s !important; }
+  .card.empty::after { animation: none; }
+}
+</style>
+</head>
+<body data-view="card">
+
+<div class="ambient" id="ambientA"></div>
+<div class="ambient" id="ambientB"></div>
+
+<main class="stage" id="stage" aria-label="Card. Swipe left for the next card, right for the previous one, tap to flip.">
+  <div class="card under" id="cardB" hidden></div>
+  <div class="card empty" id="cardA"></div>
+</main>
+
+<template id="cardTpl">
+  <div class="card-inner">
+    <div class="face front">
+      <img class="full" alt="" draggable="false">
+      <img class="art" alt="" draggable="false">
+      <div class="lore"><p class="lore-name"></p><div class="lore-text"></div><p class="credit"></p></div>
+    </div>
+    <div class="face back">
+      <img class="full" alt="" draggable="false">
+      <img class="art" alt="" draggable="false">
+      <div class="lore"><p class="lore-name"></p><div class="lore-text"></div><p class="credit"></p></div>
+    </div>
+  </div>
+  <span class="turn-hint" hidden aria-hidden="true">↻</span>
+</template>
+
+<button class="menu-btn" id="menuBtn" aria-label="Open view, card info and filters" aria-controls="sheet" aria-expanded="false">
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+</button>
+
+<div class="coach" id="coach" hidden>← Swipe for the next card</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="scrim" id="scrim"></div>
+<section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="View, card info and filters" inert>
+  <div class="grabber" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <p class="label" style="margin:0">This card</p>
+    <button class="close-btn" id="closeBtn" aria-label="Close">×</button>
+  </div>
+  <div class="sheet-body">
+    <div class="this-card" id="thisCard">
+      <h2 id="ciName">–</h2>
+      <p class="type" id="ciType"></p>
+      <dl>
+        <dt>Set</dt><dd id="ciSet"></dd>
+        <dt>Number</dt><dd id="ciNum"></dd>
+        <dt>Artist</dt><dd id="ciArtist"></dd>
+      </dl>
+      <a class="ext" id="ciLink" href="#" target="_blank" rel="noopener">View on Scryfall ↗</a>
+    </div>
+
+    <div>
+      <p class="label">View</p>
+      <div class="views" id="views">
+        <button type="button" data-v="card" aria-pressed="true">
+          <svg viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="9" y="3" width="16" height="28" rx="2"/><rect x="11.5" y="7" width="11" height="8" fill="currentColor" stroke="none" opacity=".45"/><path d="M12 19h10M12 22.5h10M12 26h6" stroke-linecap="round"/></svg>
+          Full card
+        </button>
+        <button type="button" data-v="art" aria-pressed="false">
+          <svg viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="8" width="28" height="18" rx="2"/><path d="M5 24l8-8 6 6 4-4 7 6" stroke-linejoin="round"/><circle cx="24" cy="13" r="2"/></svg>
+          Art only
+        </button>
+        <button type="button" data-v="lore" aria-pressed="false">
+          <svg viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="28" height="15" rx="2"/><path d="M5 17l7-6 5 5 4-3 8 6" stroke-linejoin="round"/><path d="M7 24h20M7 28h14" stroke-linecap="round"/></svg>
+          Art + lore
+        </button>
+      </div>
+      <p class="hint" id="loreHint" hidden>Shows the flavor text only, never rules text. Only cards that have flavor text are dealt.</p>
+    </div>
+
+    <form class="filters" id="filters" autocomplete="off">
+      <p class="label" style="margin:0">Which cards are dealt</p>
+
+      <div>
+        <p class="label">Color</p>
+        <div class="chips" data-group="colors">
+          <button type="button" class="chip" data-v="w" aria-pressed="false"><span class="pip" style="background:var(--mana-w)"></span>White</button>
+          <button type="button" class="chip" data-v="u" aria-pressed="false"><span class="pip" style="background:var(--mana-u)"></span>Blue</button>
+          <button type="button" class="chip" data-v="b" aria-pressed="false"><span class="pip" style="background:var(--mana-b)"></span>Black</button>
+          <button type="button" class="chip" data-v="r" aria-pressed="false"><span class="pip" style="background:var(--mana-r)"></span>Red</button>
+          <button type="button" class="chip" data-v="g" aria-pressed="false"><span class="pip" style="background:var(--mana-g)"></span>Green</button>
+          <button type="button" class="chip" data-v="c" aria-pressed="false"><span class="pip" style="background:var(--mana-c)"></span>Colorless</button>
+          <button type="button" class="chip" data-v="m" aria-pressed="false"><span class="pip multi"></span>Multicolor</button>
+        </div>
+      </div>
+
+      <div>
+        <p class="label">Card type</p>
+        <div class="chips" data-group="types">
+          <button type="button" class="chip" data-v="creature" aria-pressed="false">Creature</button>
+          <button type="button" class="chip" data-v="instant" aria-pressed="false">Instant</button>
+          <button type="button" class="chip" data-v="sorcery" aria-pressed="false">Sorcery</button>
+          <button type="button" class="chip" data-v="enchantment" aria-pressed="false">Enchantment</button>
+          <button type="button" class="chip" data-v="artifact" aria-pressed="false">Artifact</button>
+          <button type="button" class="chip" data-v="planeswalker" aria-pressed="false">Planeswalker</button>
+          <button type="button" class="chip" data-v="land" aria-pressed="false">Land</button>
+          <button type="button" class="chip" data-v="battle" aria-pressed="false">Battle</button>
+        </div>
+      </div>
+
+      <div>
+        <p class="label">Rarity</p>
+        <div class="chips" data-group="rarities">
+          <button type="button" class="chip" data-v="common" aria-pressed="false"><span class="rarity common"></span>Common</button>
+          <button type="button" class="chip" data-v="uncommon" aria-pressed="false"><span class="rarity uncommon"></span>Uncommon</button>
+          <button type="button" class="chip" data-v="rare" aria-pressed="false"><span class="rarity rare"></span>Rare</button>
+          <button type="button" class="chip" data-v="mythic" aria-pressed="false"><span class="rarity mythic"></span>Mythic</button>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div>
+          <p class="label"><label for="format">Format</label></p>
+          <select id="format">
+            <option value="">Any format</option>
+            <option value="standard">Standard</option>
+            <option value="pioneer">Pioneer</option>
+            <option value="modern">Modern</option>
+            <option value="legacy">Legacy</option>
+            <option value="vintage">Vintage</option>
+            <option value="commander">Commander</option>
+            <option value="pauper">Pauper</option>
+          </select>
+        </div>
+        <div>
+          <p class="label"><label for="lang">Card language</label></p>
+          <select id="lang">
+            <option value="en">English</option>
+            <option value="de" lang="de">Deutsch</option>
+            <option value="es" lang="es">Español</option>
+            <option value="fr" lang="fr">Français</option>
+            <option value="it" lang="it">Italiano</option>
+            <option value="pt" lang="pt">Português</option>
+            <option value="ru" lang="ru">Русский</option>
+            <option value="ja" lang="ja">日本語</option>
+            <option value="ko" lang="ko">한국어</option>
+            <option value="zhs" lang="zh-Hans">简体中文</option>
+            <option value="zht" lang="zh-Hant">繁體中文</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <p class="label"><label for="custom">Custom Scryfall search</label></p>
+        <input type="text" id="custom" placeholder="e.g. set:dsk  or  a:&quot;rebecca guay&quot;" spellcheck="false" autocapitalize="off">
+        <p class="hint">Applied on top of the filters above. Uses Scryfall syntax, e.g. <code>cmc&gt;=7</code> or <code>o:flying</code>.</p>
+      </div>
+
+      <div style="display:grid; gap:10px">
+        <label class="toggle"><input type="checkbox" id="noBasics" checked> Hide basic lands</label>
+        <label class="toggle"><input type="checkbox" id="ambientOn" checked> Blurred image in the background</label>
+      </div>
+
+      <p class="status" id="status" hidden></p>
+
+      <div class="actions">
+        <button type="button" class="ghost" id="resetBtn">Reset</button>
+        <button type="submit" class="primary" id="applyBtn">Apply filters</button>
+      </div>
+    </form>
+
+    <div>
+      <p class="label">Share &amp; install</p>
+      <div class="actions">
+        <button type="button" class="ghost" id="shareBtn">Share link</button>
+        <button type="button" class="ghost" id="qrBtn">Show QR code</button>
+      </div>
+      <div id="installBox">
+        <button type="button" class="primary install-btn" id="installBtn" hidden>Install Ponder as an app</button>
+        <p class="hint" id="installHow"></p>
+      </div>
+    </div>
+
+    <div class="fine">
+      <p class="keys">On a computer: <kbd>→</kbd> or <kbd>Space</kbd> next, <kbd>←</kbd> back, <kbd>F</kbd> flip, <kbd>V</kbd> change view, <kbd>M</kbd> menu.</p>
+      <p>Card data and images from <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>. Ponder stores your settings in this browser only. No accounts, no cookies, no tracking.</p>
+      <p>Ponder is unofficial fan content, permitted under the Wizards of the Coast Fan Content Policy. It is not approved or endorsed by Wizards. Card images, artwork and text are property of Wizards of the Coast. © Wizards of the Coast LLC.</p>
+    </div>
+  </div>
+</section>
+
+<div class="qr" id="qr" hidden role="dialog" aria-modal="true" aria-label="QR code for Ponder">
+  <div class="qr-card">
+    <h2>Ponder</h2>
+    <img id="qrImg" alt="QR code that opens Ponder">
+    <p class="qr-url" id="qrUrl"></p>
+    <button type="button" class="ghost" id="qrClose">Close</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- Settings ----------
+  const API = "https://api.scryfall.com/cards/random";
+  const QUEUE_TARGET = 4;          // this many cards wait fully loaded
+  const MIN_GAP_MS = 120;          // gap between API requests (Scryfall asks for 50–100 ms)
+  const HISTORY_MAX = 60;
+  // Always excluded: tokens, emblems, Un-sets, Art Series cards, digital-only cards
+  const BASE_QUERY = "game:paper -t:token -t:emblem -is:funny -st:memorabilia";
+  const STORE_KEY = "ponder.v1";
+  const VIEWS = ["card", "art", "lore"];
+  const LANGS = ["en", "de", "es", "fr", "it", "pt", "ru", "ja", "ko", "zhs", "zht"];
+
+  const DEFAULT_FILTERS = { colors: [], types: [], rarities: [], format: "", lang: "en", custom: "", noBasics: true, ambient: true, view: "card" };
+
+  // ---------- State ----------
+  let filters = loadFilters();
+  let history = [];   // cards already shown
+  let pos = -1;       // index of the current card in history
+  let queue = [];     // preloaded cards not shown yet
+  let gen = 0;        // bumps on every new search; discards stale loads
+  let filling = false;
+  let lastRequest = 0;
+  let waitingForNext = false;
+  let animating = false;
+
+  const $ = (id) => document.getElementById(id);
+  const stage = $("stage");
+  const sheet = $("sheet"), scrim = $("scrim"), menuBtn = $("menuBtn");
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Two card layers that swap roles after each swipe, so the visible card never changes its image
+  let topEl = $("cardA"), underEl = $("cardB");
+  for (const el of [topEl, underEl]) el.append($("cardTpl").content.cloneNode(true));
+
+  // ---------- Storage (optional) ----------
+  function loadFilters() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (raw) {
+        const f = Object.assign({}, DEFAULT_FILTERS, JSON.parse(raw).filters || {});
+        if (!VIEWS.includes(f.view)) f.view = "card";
+        if (!LANGS.includes(f.lang)) f.lang = "en";
+        return f;
+      }
+    } catch (e) {}
+    return Object.assign({}, DEFAULT_FILTERS);
+  }
+  function saveState(extra) {
+    try {
+      const prev = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+      localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign(prev, { filters }, extra || {})));
+    } catch (e) {}
+  }
+  function readFlag(name) {
+    try { return !!JSON.parse(localStorage.getItem(STORE_KEY) || "{}")[name]; } catch (e) { return false; }
+  }
+
+  // ---------- Scryfall ----------
+  function buildQuery(f) {
+    const parts = [BASE_QUERY];
+    const or = (list, fn) => list.length === 1 ? fn(list[0]) : "(" + list.map(fn).join(" OR ") + ")";
+    if (f.colors.length) parts.push(or(f.colors, (c) => "c:" + c));
+    if (f.types.length) parts.push(or(f.types, (t) => "t:" + t));
+    if (f.rarities.length) parts.push(or(f.rarities, (r) => "r:" + r));
+    if (f.format) parts.push("f:" + f.format);
+    if (f.lang && f.lang !== "en") parts.push("lang:" + f.lang);
+    if (f.noBasics) parts.push("-t:basic");
+    if (f.view === "lore") parts.push("has:flavor");
+    if (f.custom.trim()) parts.push("(" + f.custom.trim() + ")");
+    return parts.join(" ");
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Why did no answer come back? Tell the common cases apart.
+  function offlineReason() {
+    if (navigator.onLine === false) return "You're offline. Ponder continues as soon as you're back online.";
+    if (window.top !== window.self || location.origin === "null" || location.protocol === "content:") {
+      return "This preview blocks internet access. Open Ponder in Chrome, Edge, Firefox or Safari instead.";
+    }
+    return "Can't reach Scryfall. Is an ad blocker or network filter blocking api.scryfall.com?";
+  }
+
+  async function fetchRandom(query) {
+    const wait = lastRequest + MIN_GAP_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    lastRequest = Date.now();
+    let res;
+    try {
+      res = await fetch(API + "?q=" + encodeURIComponent(query), { headers: { Accept: "application/json" } });
+    } catch (e) {
+      throw { kind: "network", message: offlineReason() };
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (res.status === 404) throw { kind: "empty", message: "No cards match these filters. Try loosening them a little." };
+      if (res.status === 429) throw { kind: "rate", message: "Too many requests. Ponder waits a moment, then continues." };
+      throw { kind: "query", message: (data.warnings && data.warnings[0]) || data.details || "Scryfall didn't accept this search." };
+    }
+    return data;
+  }
+
+  // Scryfall card -> what Ponder needs. Every side (face) has a card image, an art crop and flavor text.
+  function normalize(c) {
+    if (c.image_status === "missing" || c.image_status === "placeholder") return null;
+    const sided = !c.image_uris && Array.isArray(c.card_faces) && c.card_faces.every((f) => f.image_uris);
+    const nameOf = (f) => f.printed_name || f.name || "";
+    const faces = (sided ? c.card_faces : [c]).map((f) => {
+      const u = f.image_uris || {};
+      return {
+        full: u.large || u.normal,
+        art: u.art_crop || u.large || u.normal,
+        name: nameOf(f),
+        flavor: f.flavor_text || "",
+        artist: f.artist || c.artist || "",
+      };
+    });
+    if (!faces[0].full) return null;
+    if (!sided && Array.isArray(c.card_faces)) {
+      // One image, several halves (split, adventure, Kamigawa flip): merge names and flavor text
+      faces[0].name = c.card_faces.map(nameOf).join(" // ");
+      faces[0].flavor = c.flavor_text || c.card_faces.map((f) => f.flavor_text).filter(Boolean).join("\n");
+    }
+
+    // How does this card "turn"?
+    let turn = "";
+    if (faces.length > 1) turn = "flipped";                                   // double-faced cards
+    else if (c.layout === "flip") turn = "rotated180";                        // Kamigawa flip cards
+    else if ((c.layout === "split" && !(c.keywords || []).includes("Aftermath")) || c.layout === "planar") turn = "rotated90";
+
+    const typeFaces = c.card_faces || [c];
+    return {
+      id: c.id,
+      faces,
+      turn,
+      ready: {},
+      name: faces.map((f) => f.name).join(" // ") || c.name,
+      type: typeFaces.map((f) => f.printed_type_line || f.type_line || "").filter(Boolean).join(" // ") || c.type_line || "",
+      set: c.set_name + " (" + c.set.toUpperCase() + ")",
+      number: c.collector_number + (c.lang && c.lang !== "en" ? " · " + c.lang.toUpperCase() : ""),
+      rarity: c.rarity,
+      artist: [...new Set(faces.map((f) => f.artist).filter(Boolean))].join(", ") || "unknown",
+      url: c.scryfall_uri,
+    };
+  }
+
+  const imageKind = () => (filters.view === "card" ? "full" : "art");
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.decoding = "async";
+      // decode() can wait forever in a hidden tab, so carry on after a short while even if it isn't done
+      img.onload = () => Promise.race([img.decode ? img.decode().catch(() => {}) : null, sleep(500)]).then(resolve);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+  async function preload(card, kind) {
+    if (card.ready[kind]) return;
+    await Promise.all(card.faces.map((f) => loadImage(f[kind])));
+    card.ready[kind] = true;
+  }
+  // After a view change, load the matching images for the waiting cards
+  function warmQueue() {
+    const kind = imageKind();
+    queue.forEach((c) => preload(c, kind).catch(() => {}));
+  }
+
+  function knownIds() {
+    const ids = new Set(queue.map((c) => c.id));
+    for (let i = Math.max(0, history.length - 30); i < history.length; i++) ids.add(history[i].id);
+    return ids;
+  }
+
+  async function fill() {
+    if (filling) return;
+    filling = true;
+    const myGen = gen;
+    let misses = 0, dupes = 0;
+    try {
+      while (queue.length < QUEUE_TARGET && myGen === gen) {
+        const raw = await fetchRandom(buildQuery(filters));
+        if (myGen !== gen) break;
+        const card = normalize(raw);
+        if (!card) {
+          if (++misses > 8) throw { kind: "empty", message: "No cards with images match these filters." };
+          continue;
+        }
+        // Avoid repeats, but allow them eventually when the search only has a few cards
+        if (knownIds().has(card.id) && ++dupes <= 6) continue;
+        try { await preload(card, imageKind()); }
+        catch (e) {
+          if (++misses > 8) throw { kind: "network", message: "Card images can't be loaded right now." };
+          continue;
+        }
+        if (myGen !== gen) break;
+        queue.push(card);
+        misses = 0;
+        hideStatus();
+        if (waitingForNext) { waitingForNext = false; next(); }
+      }
+    } catch (err) {
+      if (myGen === gen) handleError(err);
+    } finally {
+      filling = false;
+      if (myGen !== gen) fill(); // the search changed while loading
+    }
+  }
+
+  function handleError(err) {
+    const msg = (err && err.message) || "Something went wrong.";
+    if (err && err.kind === "rate") { setTimeout(fill, 1500); toast(msg); return; }
+    if (err && err.kind === "network") { toast(msg); setTimeout(fill, 4000); return; }
+    // No results or a broken search: show it in the menu
+    showStatus(msg);
+    topEl.classList.toggle("empty", pos < 0);
+    waitingForNext = false;
+    openSheet();
+  }
+
+  // New search: drop the waiting cards and deal again
+  function restartQueue() {
+    gen++;
+    queue = [];
+    history = history.slice(0, pos + 1); // otherwise old cards would still lie ahead in the history
+    lastRequest = Date.now();
+    hideStatus();
+    fill();
+  }
+
+  // ---------- Rendering ----------
+  function renderFlavor(el, text) {
+    el.textContent = "";
+    el.hidden = !text;
+    if (!text) return;
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      const p = document.createElement("p");
+      p.textContent = line;
+      if (/^\s*[—–]\s*\S/.test(line)) p.className = "attr"; // "—Jaya Ballard": the quote's source
+      el.append(p);
+    }
+  }
+
+  function turnAllowed(card) {
+    if (!card) return false;
+    return filters.view === "card" ? !!card.turn : card.turn === "flipped";
+  }
+
+  function paint(el, card) {
+    el.classList.toggle("empty", !card);
+    el.dataset.turn = "";
+    el.style.removeProperty("--fit");
+    const hint = el.querySelector(".turn-hint");
+    if (!card) { hint.hidden = true; return; }
+    const kind = imageKind();
+    el.querySelectorAll(".face").forEach((fe, i) => {
+      const f = card.faces[i];
+      fe.hidden = !f;
+      if (!f) return;
+      const img = fe.querySelector(kind === "full" ? ".full" : ".art");
+      fe.querySelector(kind === "full" ? ".art" : ".full").removeAttribute("src");
+      img.src = f[kind];
+      img.alt = f.name;
+      fe.querySelector(".lore-name").textContent = f.name;
+      renderFlavor(fe.querySelector(".lore-text"), f.flavor);
+      fe.querySelector(".credit").textContent = (f.artist ? "Illustrated by " + f.artist + " · " : "") + "© Wizards of the Coast";
+    });
+    hint.hidden = !turnAllowed(card);
+  }
+
+  let ambientFlip = false;
+  function setAmbient(src) {
+    if (!src) return;
+    const a = $("ambientA"), b = $("ambientB");
+    const [on, off] = ambientFlip ? [a, b] : [b, a];
+    ambientFlip = !ambientFlip;
+    on.style.backgroundImage = 'url("' + src + '")';
+    on.classList.add("on");
+    off.classList.remove("on");
+  }
+  const ambientFor = (card, face) => card && card.faces[face || 0][imageKind()];
+
+  function current() { return history[pos]; }
+
+  function showCurrent() {
+    const card = current();
+    paint(topEl, card);
+    setAmbient(ambientFor(card));
+    renderInfo(card);
+  }
+
+  function renderInfo(card) {
+    if (!card) return;
+    $("ciName").textContent = card.name;
+    $("ciType").textContent = card.type;
+    $("ciSet").textContent = card.set;
+    $("ciNum").textContent = "";
+    const dot = document.createElement("span");
+    dot.className = "rarity " + card.rarity;
+    $("ciNum").append(dot, document.createTextNode(card.number));
+    $("ciArtist").textContent = card.artist;
+    $("ciLink").href = card.url;
+  }
+
+  // ---------- View ----------
+  function setView(v) {
+    if (!VIEWS.includes(v) || v === filters.view) return;
+    const before = buildQuery(filters);
+    filters.view = v;
+    document.body.dataset.view = v;
+    saveState();
+    syncViews();
+    if (current()) showCurrent();
+    if (buildQuery(filters) !== before) {
+      // The lore view needs flavor text; without it, move straight on to the next fitting card
+      if (v === "lore" && current() && !current().faces.some((f) => f.flavor)) waitingForNext = true;
+      restartQueue();
+    } else {
+      warmQueue();
+    }
+  }
+  function syncViews() {
+    document.querySelectorAll("#views button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === filters.view)));
+    $("loreHint").hidden = filters.view !== "lore";
+  }
+  document.querySelectorAll("#views button").forEach((b) => b.addEventListener("click", () => setView(b.dataset.v)));
+
+  // ---------- Navigation ----------
+  function peek(dir) {
+    if (dir > 0) return history[pos + 1] || queue[0] || null;
+    return history[pos - 1] || null;
+  }
+
+  function step(dir) {
+    if (dir > 0) {
+      if (pos < history.length - 1) pos++;
+      else if (queue.length) {
+        history.push(queue.shift());
+        if (history.length > HISTORY_MAX) history.shift(); else pos++;
+        fill();
+      } else return false;
+    } else {
+      if (pos <= 0) return false;
+      pos--;
+    }
+    return true;
+  }
+
+  function swapLayers() {
+    [topEl, underEl] = [underEl, topEl];
+    topEl.classList.remove("under");
+    underEl.classList.add("under");
+    for (const el of [topEl, underEl]) {
+      el.style.transition = "none";
+      el.style.transform = "";
+      el.style.opacity = "";
+    }
+    underEl.hidden = true;
+  }
+
+  function next() {
+    if (!peek(1)) { waitingForNext = true; topEl.classList.add("empty"); fill(); return; }
+    animateOut(1);
+  }
+  function prev() {
+    if (!peek(-1)) { bump(); return; }
+    animateOut(-1);
+  }
+
+  // The card flies off; the next one is already lying underneath
+  function animateOut(dir, fromX, fromY) {
+    if (animating) return;
+    const target = peek(dir);
+    if (!target) return;
+    if (pos < 0) { step(dir); showCurrent(); return; } // very first card: no animation
+    animating = true;
+    if (fromX === undefined) {
+      // via keyboard: prepare the card underneath first
+      paint(underEl, target);
+      underEl.style.transition = "none";
+      underEl.style.transform = "scale(.92)";
+      underEl.style.opacity = ".35";
+    }
+    underEl.hidden = false;
+    void underEl.offsetWidth; // commit the start state so the transition runs
+
+    const x = (dir > 0 ? -1 : 1) * (window.innerWidth * 1.15);
+    const y = (fromY || 0) * 1.2;
+    const rot = (dir > 0 ? -1 : 1) * 22;
+    const dur = reduceMotion ? 10 : 260;
+
+    topEl.style.transition = `transform ${dur}ms cubic-bezier(.4,0,.6,1)`;
+    underEl.style.transition = `transform ${dur}ms var(--ease-out), opacity ${dur}ms`;
+    topEl.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg)`;
+    underEl.style.transform = "scale(1)";
+    underEl.style.opacity = "1";
+
+    setTimeout(() => {
+      step(dir);
+      swapLayers();
+      const card = current();
+      setAmbient(ambientFor(card));
+      renderInfo(card);
+      animating = false;
+      dismissCoach();
+    }, dur + 20);
+  }
+
+  function snapBack() {
+    topEl.style.transition = "transform 280ms var(--ease-out)";
+    topEl.style.transform = "";
+    underEl.style.transition = "transform 280ms var(--ease-out), opacity 280ms";
+    underEl.style.transform = "scale(.92)";
+    underEl.style.opacity = "0";
+    setTimeout(() => { if (!animating) underEl.hidden = true; }, 290);
+  }
+
+  function bump() {
+    if (reduceMotion) return;
+    topEl.animate([{ transform: "translateX(0)" }, { transform: "translateX(18px)" }, { transform: "translateX(0)" }], { duration: 260, easing: "ease-out" });
+  }
+
+  function turnCard() {
+    const card = current();
+    if (!turnAllowed(card)) return;
+    if (topEl.dataset.turn) {
+      topEl.dataset.turn = "";
+      if (card.turn === "flipped") setAmbient(ambientFor(card, 0));
+      return;
+    }
+    if (card.turn === "rotated90") {
+      // sideways card: shrink it so that it fits the width once turned
+      const fit = Math.min(1, (window.innerWidth - 24) / topEl.offsetHeight, (window.innerHeight - 24) / topEl.offsetWidth);
+      topEl.style.setProperty("--fit", fit.toFixed(3));
+    }
+    topEl.dataset.turn = card.turn;
+    if (card.turn === "flipped") setAmbient(ambientFor(card, 1));
+  }
+
+  // ---------- Gestures ----------
+  let drag = null;
+  stage.addEventListener("pointerdown", (e) => {
+    if (animating || sheet.classList.contains("open")) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), dx: 0, dy: 0, dir: 0, moved: false };
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag.dx = e.clientX - drag.x0;
+    drag.dy = e.clientY - drag.y0;
+    if (!drag.moved && Math.hypot(drag.dx, drag.dy) < 8) return;
+    if (!drag.moved) { drag.moved = true; stage.classList.add("dragging"); topEl.style.transition = "none"; }
+    if (pos < 0) return;
+
+    const dir = drag.dx < 0 ? 1 : -1; // drag left = next card
+    if (dir !== drag.dir) {
+      drag.dir = dir;
+      const target = peek(dir);
+      if (target) { paint(underEl, target); underEl.hidden = false; underEl.style.transition = "none"; }
+      else underEl.hidden = true;
+    }
+    const resist = peek(dir) ? 1 : 0.25; // at the start of the history the card only gives a little
+    const dx = drag.dx * resist;
+    topEl.style.transform = `translate(${dx}px, ${drag.dy * 0.25 * resist}px) rotate(${dx * 0.04}deg)`;
+    const p = Math.min(1, Math.abs(dx) / (window.innerWidth * 0.5));
+    underEl.style.transform = `scale(${0.92 + 0.08 * p})`;
+    underEl.style.opacity = String(0.35 + 0.65 * p);
+  });
+  const endDrag = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag; drag = null;
+    stage.classList.remove("dragging");
+    if (!d.moved) {
+      if (e.type === "pointerup" && performance.now() - d.t0 < 450 && pos >= 0) turnCard();
+      return;
+    }
+    const dt = Math.max(1, performance.now() - d.t0);
+    const v = Math.abs(d.dx) / dt;
+    const dir = d.dx < 0 ? 1 : -1;
+    const far = Math.abs(d.dx) > Math.min(140, window.innerWidth * 0.28);
+    if (e.type === "pointerup" && (far || (v > 0.5 && Math.abs(d.dx) > 30)) && Math.abs(d.dx) > Math.abs(d.dy) * 0.6) {
+      if (dir > 0 && !peek(1)) { snapBack(); next(); return; }
+      if (peek(dir)) { animateOut(dir, d.dx, d.dy); return; }
+    }
+    snapBack();
+  };
+  stage.addEventListener("pointerup", endDrag);
+  stage.addEventListener("pointercancel", endDrag);
+  stage.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest && e.target.closest("input, select, textarea")) return;
+    // Enter and Space on a button belong to that button
+    if ((e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest("button")) return;
+    if (!$("qr").hidden) { if (e.key === "Escape") closeQr(); return; }
+    const open = sheet.classList.contains("open");
+    if (e.key === "Escape" && open) { closeSheet(); return; }
+    if (e.key === "m" || e.key === "M") { open ? closeSheet() : openSheet(); return; }
+    if (e.key === "v" || e.key === "V") { setView(VIEWS[(VIEWS.indexOf(filters.view) + 1) % VIEWS.length]); return; }
+    if (open) return;
+    if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); next(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); prev(); }
+    else if (e.key === "f" || e.key === "F" || e.key === "Enter") { e.preventDefault(); turnCard(); }
+  });
+
+  // ---------- Sheet ----------
+  function openSheet() {
+    syncForm();
+    syncInstall();
+    sheet.classList.add("open"); scrim.classList.add("open");
+    sheet.inert = false;
+    menuBtn.setAttribute("aria-expanded", "true");
+    $("thisCard").hidden = !current();
+    setTimeout(() => $("closeBtn").focus({ preventScroll: true }), 50);
+  }
+  function closeSheet() {
+    sheet.classList.remove("open"); scrim.classList.remove("open");
+    sheet.inert = true;
+    menuBtn.setAttribute("aria-expanded", "false");
+    menuBtn.focus({ preventScroll: true });
+  }
+  menuBtn.addEventListener("click", openSheet);
+  $("closeBtn").addEventListener("click", closeSheet);
+  scrim.addEventListener("click", closeSheet);
+
+  // Swipe the sheet down to close it
+  (() => {
+    let y0 = null;
+    const head = sheet.querySelector(".sheet-head");
+    head.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button")) return;
+      y0 = e.clientY; head.setPointerCapture(e.pointerId);
+    });
+    head.addEventListener("pointermove", (e) => {
+      if (y0 === null) return;
+      const dy = Math.max(0, e.clientY - y0);
+      sheet.style.transition = "none";
+      sheet.style.transform = `translate(-50%, ${dy}px)`;
+    });
+    const up = (e) => {
+      if (y0 === null) return;
+      const dy = e.clientY - y0; y0 = null;
+      sheet.style.transition = ""; sheet.style.transform = "";
+      if (dy > 90) closeSheet();
+    };
+    head.addEventListener("pointerup", up);
+    head.addEventListener("pointercancel", up);
+  })();
+
+  // Form <-> filters
+  function syncForm() {
+    document.querySelectorAll(".chips[data-group]").forEach((g) => {
+      const list = filters[g.dataset.group];
+      g.querySelectorAll(".chip").forEach((b) => b.setAttribute("aria-pressed", String(list.includes(b.dataset.v))));
+    });
+    $("lang").value = filters.lang;
+    $("format").value = filters.format;
+    $("custom").value = filters.custom;
+    $("noBasics").checked = filters.noBasics;
+    $("ambientOn").checked = filters.ambient;
+    syncViews();
+  }
+  function readForm() {
+    const f = { view: filters.view, ambient: filters.ambient };
+    document.querySelectorAll(".chips[data-group]").forEach((g) => {
+      f[g.dataset.group] = [...g.querySelectorAll('.chip[aria-pressed="true"]')].map((b) => b.dataset.v);
+    });
+    f.lang = $("lang").value;
+    f.format = $("format").value;
+    f.custom = $("custom").value;
+    f.noBasics = $("noBasics").checked;
+    return f;
+  }
+
+  document.querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => {
+    b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true"));
+  }));
+  $("ambientOn").addEventListener("change", (e) => {
+    filters.ambient = e.target.checked;
+    document.body.classList.toggle("no-ambient", !filters.ambient);
+    saveState();
+  });
+
+  $("filters").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = readForm();
+    const changed = buildQuery(f) !== buildQuery(filters);
+    filters = f;
+    saveState();
+    if (!changed) { closeSheet(); return; }
+    waitingForNext = true;
+    closeSheet();
+    toast("Shuffling a new selection …");
+    restartQueue();
+  });
+  // Only resets the form; it takes effect with "Apply filters"
+  $("resetBtn").addEventListener("click", () => {
+    const saved = filters;
+    filters = Object.assign({}, DEFAULT_FILTERS, { ambient: saved.ambient, view: saved.view });
+    syncForm();
+    filters = saved;
+  });
+
+  function showStatus(msg) { const s = $("status"); s.textContent = msg; s.hidden = false; }
+  function hideStatus() { $("status").hidden = true; }
+
+  let toastTimer;
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 2400);
+  }
+
+  // ---------- Share & install ----------
+  const appUrl = () => location.origin + location.pathname;
+
+  $("shareBtn").addEventListener("click", async () => {
+    const url = appUrl();
+    if (navigator.share) {
+      try { await navigator.share({ title: "Ponder", text: "Swipe through random Magic: The Gathering cards.", url }); } catch (e) {}
+      return;
+    }
+    try { await navigator.clipboard.writeText(url); toast("Link copied"); }
+    catch (e) { toast(url); }
+  });
+
+  function loadQrLibrary() {
+    if (window.qrcode) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "vendor/qrcode.min.js";
+      s.onload = resolve; s.onerror = reject;
+      document.head.append(s);
+    });
+  }
+  $("qrBtn").addEventListener("click", async () => {
+    try { await loadQrLibrary(); }
+    catch (e) { toast("The QR code couldn't be created."); return; }
+    const qr = window.qrcode(0, "M");
+    qr.addData(appUrl());
+    qr.make();
+    $("qrImg").src = qr.createDataURL(8, 2);
+    $("qrUrl").textContent = appUrl();
+    $("qr").hidden = false;
+    $("qrClose").focus({ preventScroll: true });
+  });
+  function closeQr() { $("qr").hidden = true; $("qrBtn").focus({ preventScroll: true }); }
+  $("qrClose").addEventListener("click", closeQr);
+  $("qr").addEventListener("click", (e) => { if (e.target === $("qr")) closeQr(); });
+
+  let installPrompt = null;
+  const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; syncInstall(); });
+  window.addEventListener("appinstalled", () => { installPrompt = null; syncInstall(); toast("Ponder is installed."); });
+  function syncInstall() {
+    $("installBox").hidden = isStandalone();
+    $("installBtn").hidden = !installPrompt;
+    $("installHow").hidden = !!installPrompt;
+    $("installHow").textContent = isIOS
+      ? "To install Ponder on iPhone or iPad: tap the Share button in Safari, then “Add to Home Screen”."
+      : "To install Ponder: open your browser menu and choose “Install app” or “Add to Home screen”.";
+  }
+  $("installBtn").addEventListener("click", async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    try { await installPrompt.userChoice; } catch (e) {}
+    installPrompt = null;
+    syncInstall();
+  });
+
+  // Offline start and installability (needs https or localhost)
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+
+  // ---------- First start ----------
+  function dismissCoach() {
+    const c = $("coach");
+    if (c.hidden || c.classList.contains("gone") || history.length < 2) return;
+    c.classList.add("gone");
+    saveState({ coached: true });
+  }
+
+  document.body.dataset.view = filters.view;
+  document.body.classList.toggle("no-ambient", !filters.ambient);
+  syncViews();
+  syncInstall();
+  if (!readFlag("coached")) $("coach").hidden = false;
+  waitingForNext = true;
+  fill();
+})();
+</script>
+</body>
+</html>
