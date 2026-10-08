@@ -1971,7 +1971,7 @@ input[type="text"] { font-family: var(--font-mono); font-size: 14px; }
     importCards = cards.map(slim);
     const known = cards.filter(isFav).length;
     $("importText").textContent = moved
-      ? "Your favorites from the old address are here. Keep " + (cards.length === 1 ? "it" : "all " + cards.length) + "?"
+      ? (cards.length === 1 ? "Your favorite from the old address is here. Keep it?" : "Your " + cards.length + " favorites from the old address are here. Keep them?")
       : "Someone shared " + (cards.length === 1 ? "this card" : "these " + cards.length + " cards") + " with you."
         + (known ? " " + (known === cards.length ? "All of them are" : known + " of them are") + " already in your favorites." : "");
     for (const c of cards.slice(0, 8)) {
